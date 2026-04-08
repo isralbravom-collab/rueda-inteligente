@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import IABox from '../components/IABox'
-import { callIA, buildPlanPrompt, calcFitness } from '../hooks/useIA'
+import { callIA, buildPlanPrompt, calcFitness, interpretFitness } from '../hooks/useIA'
 import { useNavigate } from 'react-router-dom'
 
 const IC = {Z1:'#6db86a',Z2:'#a8d5a2',Z3:'#e8c97a',Z4:'#e09850',Z5:'#e07070',alta:'#e09850',moderada:'#e8c97a',baja:'#a8d5a2',muy_alta:'#e07070'}
@@ -29,11 +29,9 @@ export default function Plan({ rides, supps, profile }) {
   const [error, setError] = useState('')
 
   const fit = calcFitness(rides)
+  const interp = interpretFitness(fit)
 
-  const tsbColor = fit.tsb > 10 ? '#6db86a' : fit.tsb < -20 ? '#e07070' : '#e8c97a'
-  const tsbHint = fit.tsb > 10 ? 'Fresco — buen momento para cargar' : fit.tsb < -20 ? 'Fatigado — prioriza recuperación' : 'Neutro — continúa con ritmo actual'
-  const atlHint = fit.atl > 250 ? 'Carga alta esta semana' : fit.atl > 150 ? 'Carga moderada' : 'Carga baja — bien recuperado'
-  const ctlHint = fit.ctl > 200 ? 'Forma base alta' : fit.ctl > 100 ? 'Forma base moderada' : 'Base en construcción'
+  const { atlStatus, ctlStatus, tsbStatus } = interp
 
   if (rides.length < 2) return (
     <div className="page">
@@ -69,16 +67,41 @@ export default function Plan({ rides, supps, profile }) {
       <div className="g2" style={{marginBottom:20}}>
         <div className="card">
           <div className="stit" style={{marginBottom:16}}>Estado de forma actual</div>
-          <FitnessBar label="ATL — Fatiga 7 días" value={fit.atl} max={400} color="#e09850" hint={atlHint}/>
-          <FitnessBar label="CTL — Forma base 42 días" value={fit.ctl} max={350} color="#7ab8e8" hint={ctlHint}/>
-          <FitnessBar label="TSB — Balance (frescura)" value={Math.abs(fit.tsb)} max={60} color={tsbColor} hint={`${fit.tsb > 0 ? '+' : ''}${fit.tsb} · ${tsbHint}`}/>
-          <div style={{display:'flex',gap:12,marginTop:8,flexWrap:'wrap'}}>
+          <FitnessBar label="ATL — Carga aguda (7 días)" value={fit.atl} max={80} color={atlStatus.color} hint={`${fit.atl} TSS/día · ${atlStatus.label} · ${atlStatus.tip}`}/>
+          <FitnessBar label="CTL — Forma base (42 días)" value={fit.ctl} max={100} color={ctlStatus.color} hint={`${fit.ctl} TSS/día · ${ctlStatus.label} · ${ctlStatus.tip}`}/>
+          <FitnessBar label="TSB — Balance frescura / fatiga" value={Math.abs(fit.tsb)} max={40} color={tsbStatus.color} hint={`${fit.tsb > 0 ? '+' : ''}${fit.tsb} · ${tsbStatus.label} · ${tsbStatus.tip}`}/>
+          <div style={{display:'flex',gap:12,marginTop:10,flexWrap:'wrap'}}>
             <span style={{fontSize:11,fontFamily:'var(--fm)',color:'var(--text3)'}}>TSS sem. prom: <strong style={{color:'var(--text)'}}>{fit.avgWeekTSS}</strong></span>
             <span style={{fontSize:11,fontFamily:'var(--fm)',color:'var(--text3)'}}>Sem. más cargada: <strong style={{color:'var(--text)'}}>{fit.maxWeekTSS}</strong></span>
             <span style={{fontSize:11,fontFamily:'var(--fm)',color:'var(--text3)'}}>Último entreno: hace <strong style={{color:'var(--text)'}}>{fit.daysSinceLast}d</strong></span>
             <span style={{fontSize:11,fontFamily:'var(--fm)',color:fit.trend > 2 ? '#6db86a' : fit.trend < -2 ? '#e07070' : 'var(--text3)'}}>
               Velocidad: {fit.trend > 0 ? '+' : ''}{fit.trend}% {fit.trend > 2 ? '↑' : fit.trend < -2 ? '↓' : '→'}
             </span>
+          </div>
+          {/* Reference table */}
+          <div style={{marginTop:14,padding:'10px 12px',background:'var(--bg4)',borderRadius:'var(--r)'}}>
+            <div style={{fontSize:10,fontFamily:'var(--fm)',color:'var(--text3)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.5px'}}>Guía de referencia (TSS/día · ciclista recreativo)</div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6}}>
+              <div>
+                <div style={{fontSize:10,color:'var(--text3)',marginBottom:3}}>ATL (fatiga)</div>
+                {[['< 15','Muy baja'],['15–35','Normal'],['35–60','Alta'],['> 60','Muy alta']].map(([r,l])=>(
+                  <div key={r} style={{fontSize:10,color:'var(--text2)'}}><span style={{fontFamily:'var(--fm)',color:'var(--text)'}}>{r}</span> {l}</div>
+                ))}
+              </div>
+              <div>
+                <div style={{fontSize:10,color:'var(--text3)',marginBottom:3}}>CTL (forma)</div>
+                {[['< 15','Inicial'],['15–40','Moderada'],['40–70','Buena'],['> 70','Alta']].map(([r,l])=>(
+                  <div key={r} style={{fontSize:10,color:'var(--text2)'}}><span style={{fontFamily:'var(--fm)',color:'var(--text)'}}>{r}</span> {l}</div>
+                ))}
+              </div>
+              <div>
+                <div style={{fontSize:10,color:'var(--text3)',marginBottom:3}}>TSB (balance)</div>
+                {[['> +15','Muy fresco'],['+5 a -5','Óptimo'],['-5 a -20','Algo fatigado'],['< -20','Descansa']].map(([r,l])=>(
+                  <div key={r} style={{fontSize:10,color:'var(--text2)'}}><span style={{fontFamily:'var(--fm)',color:'var(--text)'}}>{r}</span> {l}</div>
+                ))}
+              </div>
+            </div>
+            <div style={{fontSize:10,color:'var(--text3)',marginTop:6,fontStyle:'italic'}}>TSS = Training Stress Score. Basado en Foster (2001) y Allen & Coggan (2010). Calibrado para ciclistas recreativos sin potenciómetro.</div>
           </div>
         </div>
 
