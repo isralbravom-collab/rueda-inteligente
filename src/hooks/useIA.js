@@ -15,50 +15,85 @@ export async function callIA(prompt, maxTokens = 400) {
 
 const RPE_LABELS = {1:'Reposo absoluto',2:'Muy muy fácil',3:'Muy fácil',4:'Fácil',5:'Moderado',6:'Algo difícil',7:'Difícil',8:'Muy difícil',9:'Extremo',10:'Máximo esfuerzo'}
 
-// ── Calcula ATL (fatiga aguda 7d) y CTL (forma crónica 42d) usando TSS estimado
+// ── Calcula ATL/CTL/TSB correctamente como promedios diarios (no sumas)
+// TSS estimado: (horas) × (rpe/10)² × 67  → calibrado para ciclista recreativo
+// 1h RPE 6 ≈ 24 TSS, 1h RPE 8 ≈ 43 TSS, 1.5h RPE 7 ≈ 49 TSS (valores realistas)
+// ATL = promedio diario TSS últimos 7 días (carga aguda / fatiga)
+// CTL = promedio diario TSS últimos 42 días (carga crónica / forma base)
+// TSB = CTL - ATL (balance: positivo=fresco, negativo=fatigado)
 export function calcFitness(rides) {
   const now = Date.now()
-  const tssOf = r => Math.round((r.dur / 60) * Math.pow((r.rpe || 5) / 10, 2) * 100)
 
-  const atl = rides
-    .filter(r => (now - new Date(r.iso).getTime()) < 7 * 86400000)
-    .reduce((a, r) => a + tssOf(r), 0)
+  // TSS calibrado: constante 67 en lugar de 100 para valores más realistas
+  const tssOf = r => Math.round((r.dur / 60) * Math.pow((r.rpe || 5) / 10, 2) * 67)
 
-  const ctl = rides
-    .filter(r => (now - new Date(r.iso).getTime()) < 42 * 86400000)
-    .reduce((a, r) => a + tssOf(r), 0) / 6  // promedio semanal 6 semanas
+  // Suma TSS de cada ventana, dividida entre los días del período = promedio diario
+  const rides7  = rides.filter(r => (now - new Date(r.iso).getTime()) <  7 * 86400000)
+  const rides42 = rides.filter(r => (now - new Date(r.iso).getTime()) < 42 * 86400000)
 
-  const tsb = Math.round(ctl - atl)  // Training Stress Balance: positivo = fresco, negativo = fatigado
+  const atl = Math.round(rides7.reduce((a, r)  => a + tssOf(r), 0) / 7)   // promedio diario 7d
+  const ctl = Math.round(rides42.reduce((a, r) => a + tssOf(r), 0) / 42)  // promedio diario 42d
+  const tsb = ctl - atl
 
-  // Tendencia de velocidad: compara últimas 3 vs anteriores 3
-  const speeds = rides.filter(r => r.dur > 0 && r.dist > 0).map(r => (r.dist / (r.dur / 60)))
-  const recentAvg = speeds.slice(0, 3).reduce((a, b) => a + b, 0) / Math.max(speeds.slice(0, 3).length, 1)
-  const oldAvg = speeds.slice(3, 6).reduce((a, b) => a + b, 0) / Math.max(speeds.slice(3, 6).length, 1)
-  const trend = oldAvg > 0 ? ((recentAvg - oldAvg) / oldAvg * 100).toFixed(1) : 0
-
-  // Distribución de zonas últimas 4 semanas
-  const recent = rides.filter(r => (now - new Date(r.iso).getTime()) < 28 * 86400000)
-  const zTot = [0, 0, 0, 0, 0]
-  recent.forEach(r => (r.zp || []).forEach((p, i) => zTot[i] += p))
-  const zSum = zTot.reduce((a, b) => a + b, 0) || 1
-  const zAvg = zTot.map(v => Math.round(v / zSum * 100))
-
-  // Días desde última rodada
-  const lastRide = rides[0]
-  const daysSinceLast = lastRide ? Math.round((now - new Date(lastRide.iso).getTime()) / 86400000) : 99
-
-  // Semana más cargada (últimas 6 semanas)
+  // Carga semanal real (para referencia y comparación)
   const weekLoad = {}
-  rides.filter(r => (now - new Date(r.iso).getTime()) < 42 * 86400000).forEach(r => {
+  rides42.forEach(r => {
     const d = new Date(r.iso)
     const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay() + 6) % 7))
     const wk = mon.toISOString().slice(0, 10)
     weekLoad[wk] = (weekLoad[wk] || 0) + tssOf(r)
   })
-  const maxWeekTSS = Math.max(...Object.values(weekLoad), 0)
-  const avgWeekTSS = Object.values(weekLoad).reduce((a, b) => a + b, 0) / Math.max(Object.keys(weekLoad).length, 1)
+  const weekValues = Object.values(weekLoad)
+  const maxWeekTSS = Math.round(Math.max(...weekValues, 0))
+  const avgWeekTSS = weekValues.length
+    ? Math.round(weekValues.reduce((a, b) => a + b, 0) / weekValues.length)
+    : 0
 
-  return { atl: Math.round(atl), ctl: Math.round(ctl), tsb, trend: parseFloat(trend), zAvg, daysSinceLast, maxWeekTSS: Math.round(maxWeekTSS), avgWeekTSS: Math.round(avgWeekTSS) }
+  // Tendencia velocidad: últimas 3 rodadas vs 3 anteriores
+  const withSpeed = rides.filter(r => r.dur > 0 && r.dist > 0)
+  const recentSpeeds = withSpeed.slice(0, 3).map(r => r.dist / (r.dur / 60))
+  const oldSpeeds    = withSpeed.slice(3, 6).map(r => r.dist / (r.dur / 60))
+  const recentAvg = recentSpeeds.length ? recentSpeeds.reduce((a,b) => a+b,0) / recentSpeeds.length : 0
+  const oldAvg    = oldSpeeds.length    ? oldSpeeds.reduce((a,b) => a+b,0)    / oldSpeeds.length    : 0
+  const trend = oldAvg > 0 ? parseFloat(((recentAvg - oldAvg) / oldAvg * 100).toFixed(1)) : 0
+
+  // Zonas últimas 4 semanas
+  const rides28 = rides.filter(r => (now - new Date(r.iso).getTime()) < 28 * 86400000)
+  const zTot = [0, 0, 0, 0, 0]
+  rides28.forEach(r => (r.zp || []).forEach((p, i) => zTot[i] += p))
+  const zSum = zTot.reduce((a, b) => a + b, 0) || 1
+  const zAvg = zTot.map(v => Math.round(v / zSum * 100))
+
+  const lastRide = rides[0]
+  const daysSinceLast = lastRide
+    ? Math.round((now - new Date(lastRide.iso).getTime()) / 86400000)
+    : 99
+
+  return { atl, ctl, tsb, trend, zAvg, daysSinceLast, maxWeekTSS, avgWeekTSS }
+}
+
+// ── Interpreta ATL/CTL/TSB en lenguaje humano
+export function interpretFitness(fit) {
+  const atlStatus =
+    fit.atl > 60 ? { label:'Carga alta', color:'#e07070', tip:'Descansa o reduce intensidad' } :
+    fit.atl > 35 ? { label:'Carga moderada-alta', color:'#e09850', tip:'Ritmo sostenible, monitorea sensaciones' } :
+    fit.atl > 15 ? { label:'Carga normal', color:'#e8c97a', tip:'Nivel de entrenamiento saludable' } :
+                   { label:'Carga baja', color:'#6db86a', tip:'Bien recuperado, puedes aumentar volumen' }
+
+  const ctlStatus =
+    fit.ctl > 70 ? { label:'Forma alta', color:'#6db86a', tip:'Base aeróbica sólida' } :
+    fit.ctl > 40 ? { label:'Forma moderada', color:'#a8d5a2', tip:'Base en desarrollo' } :
+    fit.ctl > 15 ? { label:'Forma inicial', color:'#e8c97a', tip:'Sigue siendo consistente' } :
+                   { label:'Base mínima', color:'#e09850', tip:'Aumenta gradualmente el volumen' }
+
+  const tsbStatus =
+    fit.tsb > 15  ? { label:'Muy fresco', color:'#6db86a', tip:'Puedes cargar más esta semana' } :
+    fit.tsb > -5  ? { label:'Fresco / óptimo', color:'#a8d5a2', tip:'Momento ideal para rendir' } :
+    fit.tsb > -20 ? { label:'Algo fatigado', color:'#e8c97a', tip:'Normal si vienes de semana cargada' } :
+    fit.tsb > -35 ? { label:'Fatigado', color:'#e09850', tip:'Considera sesión de recuperación' } :
+                    { label:'Muy fatigado', color:'#e07070', tip:'Prioriza descanso esta semana' }
+
+  return { atlStatus, ctlStatus, tsbStatus }
 }
 
 export function buildRidePrompt(ride, history, supps, profile) {
@@ -130,9 +165,9 @@ export function buildPlanPrompt(rides, supps, profile, context = '') {
 - Condiciones de ruta: ${profile.ruta||'calles urbanas'}
 
 ══ ESTADO DE FORMA ACTUAL (calculado) ══
-- ATL (fatiga últimos 7d): ${fit.atl} TSS → ${fit.atl > 250 ? 'ALTO — riesgo de sobreentrenamiento' : fit.atl > 150 ? 'moderado' : 'bajo — bien recuperado'}
-- CTL (forma base 42d): ${fit.ctl} TSS/sem → ${fit.ctl > 200 ? 'forma alta' : fit.ctl > 100 ? 'forma moderada' : 'base en construcción'}
-- TSB (balance): ${fit.tsb} → ${fit.tsb > 10 ? 'FRESCO — puede incrementar carga' : fit.tsb < -20 ? 'FATIGADO — priorizar recuperación' : 'neutro'}
+- ATL (carga aguda 7d): ${fit.atl} TSS/día → ${fit.atl > 60 ? 'MUY ALTA — priorizar recuperación' : fit.atl > 35 ? 'moderada-alta — monitorea sensaciones' : fit.atl > 15 ? 'normal' : 'baja — puede aumentar carga'}
+- CTL (forma base 42d): ${fit.ctl} TSS/día → ${fit.ctl > 70 ? 'forma alta — base sólida' : fit.ctl > 40 ? 'forma moderada' : fit.ctl > 15 ? 'forma inicial' : 'base mínima — priorizar volumen bajo'}
+- TSB (balance frescura): ${fit.tsb} → ${fit.tsb > 15 ? 'MUY FRESCO — puede cargar bien esta semana' : fit.tsb > -5 ? 'ÓPTIMO — momento ideal para rendir' : fit.tsb > -20 ? 'algo fatigado — normal tras semana activa' : fit.tsb > -35 ? 'FATIGADO — sesión recuperación esta semana' : 'MUY FATIGADO — prioriza descanso'}
 - Tendencia velocidad reciente: ${fit.trend > 2 ? `+${fit.trend}% ↑ mejorando` : fit.trend < -2 ? `${fit.trend}% ↓ bajando` : 'estable'}
 - Días desde última rodada: ${fit.daysSinceLast}
 - TSS semana más cargada: ${fit.maxWeekTSS} | TSS promedio semanal: ${fit.avgWeekTSS}
