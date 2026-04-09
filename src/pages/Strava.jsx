@@ -17,7 +17,6 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
   const REDIRECT = encodeURIComponent(window.location.origin + '/api/strava-auth')
   const STRAVA_URL = `https://www.strava.com/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${REDIRECT}&response_type=code&scope=activity:read_all`
 
-  // Parse tokens from URL hash after OAuth redirect
   useEffect(() => {
     const hash = window.location.hash
     if (hash.includes('access_token=')) {
@@ -54,11 +53,8 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
     setSyncing(true)
     setResult(null)
     setPendingRides([])
-
-    // Find most recent Strava ride to avoid re-fetching everything
     const lastStrava = rides.filter(r => r.fromStrava).sort((a, b) => new Date(b.iso) - new Date(a.iso))[0]
     const after = lastStrava ? Math.floor(new Date(lastStrava.iso).getTime() / 1000) : null
-
     try {
       const res = await fetch('/api/strava-sync', {
         method: 'POST',
@@ -71,24 +67,14 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
         })
       })
       const data = await res.json()
-
-      if (data.error) {
-        setResult({ type: 'error', msg: data.error })
-        setSyncing(false)
-        return
-      }
-
-      // Update token if refreshed
+      if (data.error) { setResult({ type: 'error', msg: data.error }); setSyncing(false); return }
       if (data.new_token && data.new_token !== stravaAuth.access_token) {
         const updated = { ...stravaAuth, access_token: data.new_token }
         setStravaAuth(updated)
         save('ri3_strava', updated)
       }
-
-      // Filter out already-saved rides (by stravaId)
       const existingIds = new Set(rides.filter(r => r.stravaId).map(r => r.stravaId))
       const newRides = (data.rides || []).filter(r => !existingIds.has(r.stravaId))
-
       if (newRides.length === 0) {
         setResult({ type: 'info', msg: `Sin actividades nuevas. Ya tienes todo sincronizado (${data.count} actividades revisadas).` })
       } else {
@@ -105,8 +91,6 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
     const rpe = rpeInputs[ride.stravaId]
     const sen = senInputs[ride.stravaId]
     if (!rpe || !sen) return alert('Agrega RPE y sensación para esta rodada')
-
-    // Recalculate zones with user's fcmax
     const fcmax = profile.fcmax || 185
     const zp = [0, 0, 0, 0, 0]
     if (ride.hrAvg > 0) {
@@ -117,10 +101,8 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
       else if (pct < 90) zp[3] = 100
       else zp[4] = 100
     }
-
     const dupe = isDuplicate({ ...ride, iso: ride.iso })
     if (dupe && !confirm(`Parece que ya tienes esta rodada (${dupe.fecha}). ¿Guardar de todas formas?`)) return
-
     addRide({ ...ride, rpe, sen, zp, needsRPE: false })
     setPendingRides(prev => prev.filter(r => r.stravaId !== ride.stravaId))
   }
@@ -140,7 +122,6 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
         <p>Importa tus actividades automáticamente — sin exportar archivos</p>
       </div>
 
-      {/* CONNECTION STATUS */}
       <div className="card" style={{marginBottom:20}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <div>
@@ -149,9 +130,7 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
               <span style={{fontSize:15,fontWeight:500}}>{stravaAuth ? `Conectado · ${stravaAuth.athlete_name || 'Atleta'}` : 'No conectado'}</span>
             </div>
             <div style={{fontSize:12,color:'var(--text3)'}}>
-              {stravaAuth
-                ? `Token guardado · Sincroniza cuando quieras`
-                : 'Conecta una vez y sincroniza con un clic'}
+              {stravaAuth ? 'Token guardado · Sincroniza cuando quieras' : 'Conecta una vez y sincroniza con un clic'}
             </div>
           </div>
           <div style={{display:'flex',gap:10}}>
@@ -171,7 +150,6 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
             }
           </div>
         </div>
-
         {result && (
           <div className={`al ${result.type === 'error' ? 'ar' : result.type === 'success' ? 'ai' : 'aw'}`} style={{marginTop:12}}>
             {result.msg}
@@ -179,16 +157,13 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
         )}
       </div>
 
-      {/* SETUP INSTRUCTIONS */}
       {!CLIENT_ID && (
         <div className="card" style={{marginBottom:20}}>
-          <div className="stit" style={{marginBottom:14}}>Configuración inicial (5 minutos, gratis)</div>
+          <div className="stit" style={{marginBottom:14}}>Configuración inicial</div>
           {[
-            { n:1, title:'Crea una aplicación en Strava', desc:'Ve a strava.com/settings/api → "Create & Manage Your App". Nombre: Rueda Inteligente. Website: tu URL de Vercel. Authorization Callback Domain: tu dominio de Vercel (ej: rueda-inteligente.vercel.app).' },
-            { n:2, title:'Copia tu Client ID y Client Secret', desc:'Strava te muestra el Client ID (número) y Client Secret (texto largo) al crear la app.' },
-            { n:3, title:'Agrega las variables en Vercel', desc:'En vercel.com → tu proyecto → Settings → Environment Variables, agrega: STRAVA_CLIENT_ID (el número), STRAVA_CLIENT_SECRET (el texto), APP_URL (tu URL completa, ej: https://rueda-inteligente.vercel.app).' },
-            { n:4, title:'Agrega VITE_STRAVA_CLIENT_ID en Vercel', desc:'También agrega VITE_STRAVA_CLIENT_ID con el mismo número. Esta variable la usa el frontend para construir el botón de login.' },
-            { n:5, title:'Redespliega', desc:'En Vercel → tu proyecto → Deployments → clic en los tres puntos del último deploy → Redeploy. Listo.' },
+            { n:1, title:'Crea una aplicación en Strava', desc:'Ve a strava.com/settings/api. Nombre: Rueda Inteligente. Authorization Callback Domain: tu dominio de Vercel.' },
+            { n:2, title:'Agrega las variables en Vercel', desc:'Settings → Environment Variables: STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET, VITE_STRAVA_CLIENT_ID, APP_URL.' },
+            { n:3, title:'Redespliega', desc:'Vercel → Deployments → Redeploy.' },
           ].map(step => (
             <div key={step.n} style={{display:'flex',gap:14,marginBottom:14,paddingBottom:14,borderBottom:'1px solid var(--border)'}}>
               <div style={{width:28,height:28,borderRadius:'50%',background:'var(--green3)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:500,color:'#fff',flexShrink:0}}>{step.n}</div>
@@ -201,14 +176,12 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
         </div>
       )}
 
-      {/* PENDING RIDES */}
       {pendingRides.length > 0 && (
         <>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
             <div style={{fontSize:13,color:'var(--text2)'}}>Agrega RPE y sensación a cada rodada antes de guardar</div>
             <button className="btn bp bs" onClick={saveAll}>Guardar todas</button>
           </div>
-
           {pendingRides.map(ride => {
             const sp = ride.dur > 0 ? (ride.dist / (ride.dur / 60)).toFixed(1) : '?'
             return (
@@ -218,11 +191,10 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
                     <div className="hcn">{ride.name}</div>
                     <div className="hcd">{ride.fecha}</div>
                   </div>
-                  <div style={{display:'flex',gap:8'}}>
+                  <div style={{display:'flex',gap:8}}>
                     <span style={{fontSize:12,color:'var(--amber)',fontFamily:'var(--fm)',border:'1px solid rgba(232,201,122,0.3)',padding:'2px 9px',borderRadius:20}}>Pendiente RPE</span>
                   </div>
                 </div>
-
                 <div className="hcst" style={{marginBottom:14}}>
                   <span className="hcsi">{Math.round(ride.dur)} <strong>min</strong></span>
                   <span className="hcsi">{ride.dist.toFixed(1)} <strong>km</strong></span>
@@ -230,14 +202,12 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
                   {ride.hrAvg > 0 && <span className="hcsi">FC <strong>{Math.round(ride.hrAvg)} lpm</strong></span>}
                   {ride.eg > 0 && <span className="hcsi">+{ride.eg} <strong>m</strong></span>}
                 </div>
-
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:10}}>
                   <div>
                     <label className="fl">RPE (esfuerzo percibido)</label>
                     <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:4,marginBottom:4}}>
                       {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                        <button key={n}
-                          className={`rb${rpeInputs[ride.stravaId]===n?' sel':''}`}
+                        <button key={n} className={`rb${rpeInputs[ride.stravaId]===n?' sel':''}`}
                           onClick={() => setRpeInputs(prev=>({...prev,[ride.stravaId]:n}))}>
                           {n}
                         </button>
@@ -249,8 +219,7 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
                     <label className="fl">Sensación posterior</label>
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
                       {['muy bien','bien','regular','cansado','muy cansado','con molestias'].map(s => (
-                        <button key={s}
-                          className={`sb2${senInputs[ride.stravaId]===s?' sel':''}`}
+                        <button key={s} className={`sb2${senInputs[ride.stravaId]===s?' sel':''}`}
                           onClick={() => setSenInputs(prev=>({...prev,[ride.stravaId]:s}))}>
                           {s.charAt(0).toUpperCase()+s.slice(1)}
                         </button>
@@ -258,7 +227,6 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
                     </div>
                   </div>
                 </div>
-
                 <button className="btn bp" style={{width:'100%',justifyContent:'center'}} onClick={() => saveRide(ride)}>
                   Guardar esta rodada
                 </button>
@@ -268,14 +236,13 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
         </>
       )}
 
-      {/* INFO */}
       <div className="card" style={{marginTop:pendingRides.length > 0 ? 20 : 0}}>
         <div className="stit" style={{marginBottom:10}}>Cómo funciona</div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
           {[
-            {t:'Autorización única',d:'Solo la primera vez. Strava te pide permiso para leer tus actividades. Tu contraseña nunca llega a la app.'},
-            {t:'Sincronización selectiva',d:'Jala solo actividades de ciclismo nuevas desde tu última sincronización. No re-importa lo que ya tienes.'},
-            {t:'RPE obligatorio',d:'Strava no tiene RPE ni sensación. Los agregas tú antes de guardar. Esto es lo que hace el análisis IA útil.'},
+            {t:'Autorización única',d:'Solo la primera vez. Tu contraseña nunca llega a la app.'},
+            {t:'Sincronización selectiva',d:'Jala solo actividades nuevas. No re-importa lo que ya tienes.'},
+            {t:'RPE obligatorio',d:'Strava no tiene RPE. Lo agregas tú — eso hace el análisis IA útil.'},
           ].map(item => (
             <div key={item.t} style={{background:'var(--bg3)',borderRadius:'var(--r)',padding:'12px 14px'}}>
               <div style={{fontSize:13,fontWeight:500,marginBottom:4}}>{item.t}</div>
