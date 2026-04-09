@@ -4,46 +4,45 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { accessToken } = req.body;
+  // Aceptar ambos nombres para evitar errores
+  const { accessToken, access_token } = req.body;
+  const token = accessToken || access_token;
 
-  if (!accessToken) {
+  if (!token) {
     return res.status(400).json({ error: 'Falta accessToken de Strava' });
   }
 
   try {
     let allActivities = [];
     let page = 1;
-    const perPage = 200; // máximo permitido por Strava
+    const perPage = 200;
 
     while (true) {
       const response = await fetch(
         `https://www.strava.com/api/v3/athlete/activities?page=${page}&per_page=${perPage}`,
         {
           headers: {
-            Authorization: `Bearer ${accessToken}`,
+            Authorization: `Bearer ${token}`,
           },
         }
       );
 
       if (!response.ok) {
-        throw new Error(`Strava API error: ${response.status}`);
+        const errText = await response.text();
+        throw new Error(`Strava API error ${response.status}: ${errText}`);
       }
 
       const activities = await response.json();
 
-      if (activities.length === 0) break; // no hay más rodadas
+      if (activities.length === 0) break;
 
       allActivities = [...allActivities, ...activities];
       page++;
 
-      // Pequeña pausa para no golpear el rate limit de Strava
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await new Promise(resolve => setTimeout(resolve, 250)); // pausa suave
     }
 
-    console.log(`✅ Sincronizadas ${allActivities.length} rodadas de Strava`);
-
-    // Aquí puedes agregar lógica extra si quieres descargar GPX o streams de cada actividad
-    // Por ahora devolvemos todas las rodadas completas
+    console.log(`✅ Sincronizadas ${allActivities.length} actividades de Strava`);
 
     return res.status(200).json({
       success: true,
@@ -54,7 +53,7 @@ export default async function handler(req, res) {
     console.error('Error en strava-sync:', error);
     return res.status(500).json({
       success: false,
-      error: error.message || 'Error desconocido al sincronizar Strava',
+      error: error.message || 'Error desconocido al sincronizar con Strava',
     });
   }
 }
