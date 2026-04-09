@@ -13,6 +13,7 @@ const links2 = [
 ]
 const links3 = [
   { to:'/perfil', label:'Mi perfil', icon:<><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></> },
+  { to:'/strava', label:'Strava sync', icon:<><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></> },
 ]
 
 function NavItem({ to, label, icon, onClick }) {
