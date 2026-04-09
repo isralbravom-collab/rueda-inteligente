@@ -16,6 +16,7 @@ function estimateRPE(hrAvg, cadence = 0, fcmax = 185) {
   else if (pct < 92) rpe = 8
   else if (pct < 96) rpe = 9
   else rpe = 10
+
   if (cadence > 85) rpe = Math.min(10, rpe + 1)
   if (cadence > 95) rpe = Math.min(10, rpe + 1)
   return rpe
@@ -96,11 +97,10 @@ export default function Strava({ rides, addRide, isDuplicate, profile, clearAllR
     setResult({ type: 'info', msg: 'Pendientes limpiados.' })
   }
 
-  // Nuevo: Limpiar TODO el historial
   function clearAllHistory() {
-    if (!confirm('¿Estás seguro? Esto borrará TODAS tus rodadas guardadas.')) return
+    if (!confirm('¿Estás seguro? Esto borrará TODAS tus rodadas guardadas permanentemente.')) return
     clearAllRides()
-    setResult({ type: 'success', msg: 'Historial completo borrado. Ahora puedes sincronizar desde cero.' })
+    setResult({ type: 'success', msg: 'Historial completo borrado. Ahora sincroniza desde cero.' })
   }
 
   async function sync() {
@@ -147,34 +147,28 @@ export default function Strava({ rides, addRide, isDuplicate, profile, clearAllR
       setSenInputs(initSen)
       setPendingRides(newRides)
 
-      setResult({ 
-        type: 'success', 
-        msg: `${newRides.length} rodadas nuevas. La mayoría con RPE automático.` 
-      })
+      setResult({ type: 'success', msg: `${newRides.length} rodadas nuevas procesadas.` })
     } catch (e) {
-      setResult({ type: 'error', msg: 'Error: ' + e.message })
+      setResult({ type: 'error', msg: 'Error de conexión: ' + e.message })
     }
     setSyncing(false)
-  }
-
-  function buildRide(ride) {
-    return { ...ride, rpe: rpeInputs[ride.stravaId], sen: senInputs[ride.stravaId] }
   }
 
   function saveOne(ride) {
     if (!rpeInputs[ride.stravaId] || !senInputs[ride.stravaId]) return alert('Falta RPE o sensación')
     const dupe = isDuplicate(ride)
-    if (dupe && !confirm(`Ya tienes una rodada similar el ${dupe.fecha}. ¿Guardar?`)) return
-    addRide(buildRide(ride))
+    if (dupe && !confirm(`Ya tienes una rodada similar el ${dupe.fecha}. ¿Guardar de todas formas?`)) return
+
+    addRide({ ...ride, rpe: rpeInputs[ride.stravaId], sen: senInputs[ride.stravaId] })
     setPendingRides(prev => prev.filter(r => r.stravaId !== ride.stravaId))
   }
 
   async function saveAll() {
     const missing = pendingRides.filter(r => !rpeInputs[r.stravaId] || !senInputs[r.stravaId])
     if (missing.length > 0) return alert(`Falta RPE o sensación en ${missing.length} rodadas.`)
-    
+
     for (const r of pendingRides) {
-      addRide(buildRide(r))
+      addRide({ ...r, rpe: rpeInputs[r.stravaId], sen: senInputs[r.stravaId] })
       await new Promise(res => setTimeout(res, 30))
     }
     setPendingRides([])
@@ -189,10 +183,11 @@ export default function Strava({ rides, addRide, isDuplicate, profile, clearAllR
     <div className="page">
       <div className="ph">
         <h1>Sincronizar con <em>Strava</em></h1>
-        <p>Importa solo tus rodadas de bicicleta • RPE automático con FC + cadencia</p>
+        <p>Importa solo rodadas de bicicleta • RPE automático</p>
       </div>
 
       <div className="card" style={{marginBottom:24}}>
+        {/* Status card */}
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <div>
             <div style={{display:'flex',alignItems:'center',gap:10}}>
@@ -200,37 +195,34 @@ export default function Strava({ rides, addRide, isDuplicate, profile, clearAllR
               <span style={{fontWeight:600}}>{stravaAuth ? `Conectado · ${stravaAuth.athlete_name}` : 'No conectado'}</span>
             </div>
           </div>
-          <div style={{display:'flex',gap:10}}>
+          <div>
             {stravaAuth ? (
               <>
-                <button className="btn bp" onClick={sync} disabled={syncing}>
+                <button className="btn bp" onClick={sync} disabled={syncing} style={{marginRight:8}}>
                   {syncing ? 'Sincronizando...' : 'Sincronizar ahora'}
                 </button>
                 <button className="btn bs" onClick={disconnect}>Desconectar</button>
               </>
-            ) : CLIENT_ID ? (
-              <a href={STRAVA_URL} className="btn bp">Conectar con Strava</a>
-            ) : null}
+            ) : CLIENT_ID && <a href={STRAVA_URL} className="btn bp">Conectar con Strava</a>}
           </div>
         </div>
-
         {result && <div className={`al ${result.type}`} style={{marginTop:16}}>{result.msg}</div>}
       </div>
 
-      {/* Botón peligroso: Limpiar todo el historial */}
+      {/* Botón Limpiar TODO el historial */}
       {rides.length > 0 && (
         <button 
-          className="btn bs" 
-          style={{marginBottom:24, width:'100%', background:'#ef4444', color:'white'}}
           onClick={clearAllHistory}
+          className="btn bs"
+          style={{width:'100%', marginBottom:24, background:'#ef4444', color:'white', border:'none'}}
         >
-          🗑️ Limpiar TODO el historial y sincronizar desde cero
+          🗑️ Limpiar TODO el historial y empezar de cero
         </button>
       )}
 
       {pendingRides.length > 0 && (
         <>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:16}}>
             <div><strong>{pendingRides.length}</strong> rodadas pendientes</div>
             <div>
               <button className="btn bs" onClick={clearPending} style={{marginRight:8}}>Limpiar pendientes</button>
@@ -245,7 +237,7 @@ export default function Strava({ rides, addRide, isDuplicate, profile, clearAllR
                 <div className="hct">
                   <div>
                     <div className="hcn">{ride.name}</div>
-                    <div className="hcd">{ride.fecha} · hace {Math.round((now - new Date(ride.iso).getTime())/86400000)}d</div>
+                    <div className="hcd">{ride.fecha}</div>
                   </div>
                 </div>
 
@@ -258,30 +250,24 @@ export default function Strava({ rides, addRide, isDuplicate, profile, clearAllR
                   {ride.eg > 0 && <span>+{ride.eg} m</span>}
                 </div>
 
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
                   <div>
-                    <label>RPE (Esfuerzo percibido)</label>
+                    <label>RPE</label>
                     <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:6}}>
                       {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                        <button 
-                          key={n} 
-                          className={`rb ${rpeInputs[ride.stravaId] === n ? 'sel' : ''}`}
-                          onClick={() => setRpeInputs(p => ({...p, [ride.stravaId]: n}))}
-                        >
+                        <button key={n} className={`rb ${rpeInputs[ride.stravaId] === n ? 'sel' : ''}`}
+                          onClick={() => setRpeInputs(p => ({...p, [ride.stravaId]: n}))}>
                           {n}
                         </button>
                       ))}
                     </div>
                   </div>
                   <div>
-                    <label>Sensación posterior</label>
+                    <label>Sensación</label>
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
                       {['muy bien','bien','regular','cansado','muy cansado','con molestias'].map(s => (
-                        <button 
-                          key={s} 
-                          className={`sb2 ${senInputs[ride.stravaId] === s ? 'sel' : ''}`}
-                          onClick={() => setSenInputs(p => ({...p, [ride.stravaId]: s}))}
-                        >
+                        <button key={s} className={`sb2 ${senInputs[ride.stravaId] === s ? 'sel' : ''}`}
+                          onClick={() => setSenInputs(p => ({...p, [ride.stravaId]: s}))}>
                           {s.charAt(0).toUpperCase() + s.slice(1)}
                         </button>
                       ))}
@@ -289,7 +275,7 @@ export default function Strava({ rides, addRide, isDuplicate, profile, clearAllR
                   </div>
                 </div>
 
-                <button className="btn bp" style={{width:'100%', marginTop:16}} onClick={() => saveOne(ride)}>
+                <button className="btn bp" style={{width:'100%',marginTop:16}} onClick={() => saveOne(ride)}>
                   Guardar esta rodada
                 </button>
               </div>
@@ -297,13 +283,6 @@ export default function Strava({ rides, addRide, isDuplicate, profile, clearAllR
           })}
         </>
       )}
-
-      <div className="card" style={{marginTop:30}}>
-        <strong>Resumen actual:</strong><br/>
-        • Solo rodadas de bicicleta<br/>
-        • RPE + zonas automáticas cuando hay FC<br/>
-        • Botón para limpiar todo el historial
-      </div>
     </div>
   )
 }
