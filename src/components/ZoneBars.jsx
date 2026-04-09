@@ -4,40 +4,59 @@ export default function ZoneBars({ zp = [0, 0, 0, 0, 0] }) {
   const labels = ['Z1', 'Z2', 'Z3', 'Z4', 'Z5']
   const colors = ['#4ade80', '#67e8f9', '#facc15', '#fb923c', '#f87171']
 
+  // Siempre mostramos las barras, incluso si los porcentajes son bajos
   const total = zp.reduce((sum, val) => sum + val, 0)
 
-  if (total < 10) {
-    return (
-      <div style={{ fontSize: '11px', color: 'var(--text3)', padding: '8px 0', fontStyle: 'italic' }}>
-        Sin datos suficientes para calcular zonas de frecuencia cardíaca
-      </div>
-    )
-  }
-
   return (
-    <div style={{ marginTop: 10 }}>
-      <div style={{ display: 'flex', gap: '6px' }}>
-        {zp.map((perc, i) => (
-          <div key={i} style={{ flex: 1, textAlign: 'center' }}>
-            <div
-              style={{
-                height: '14px',
-                backgroundColor: colors[i],
-                borderRadius: '4px',
-                width: `${Math.max(perc, 0)}%`,
-                margin: '0 auto',
-                transition: 'width 0.4s'
-              }}
-            />
-            <div style={{ fontSize: '10px', marginTop: '4px', color: 'var(--text3)' }}>
-              {labels[i]}
+    <div style={{ marginTop: 12 }}>
+      <p style={{ fontSize: '13px', color: '#aaa', marginBottom: '8px' }}>
+        Distribución de zonas de frecuencia cardíaca
+      </p>
+
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        {zp.map((perc, i) => {
+          const percentage = Math.max(perc || 0, 0)
+          const showBar = percentage > 0 || total === 0 // siempre mostrar aunque sea 0
+
+          return (
+            <div key={i} style={{ flex: 1, textAlign: 'center' }}>
+              <div style={{
+                height: '18px',
+                backgroundColor: '#27272a',
+                borderRadius: '6px',
+                position: 'relative',
+                overflow: 'hidden'
+              }}>
+                <div
+                  style={{
+                    height: '100%',
+                    backgroundColor: colors[i],
+                    width: `${percentage}%`,
+                    borderRadius: '6px',
+                    transition: 'width 0.5s ease'
+                  }}
+                />
+              </div>
+              <div style={{ fontSize: '11px', marginTop: '4px', color: '#aaa' }}>
+                {labels[i]}
+              </div>
+              <div style={{ 
+                fontSize: '13px', 
+                fontWeight: '600',
+                color: percentage > 0 ? '#fff' : '#555'
+              }}>
+                {Math.round(percentage)}%
+              </div>
             </div>
-            <div style={{ fontSize: '12px', fontWeight: 600 }}>
-              {Math.round(perc)}%
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
+
+      {total === 0 && (
+        <p style={{ fontSize: '12px', color: '#666', marginTop: '8px', fontStyle: 'italic' }}>
+          Sin datos de frecuencia cardíaca (solo cadencia o potencia)
+        </p>
+      )}
     </div>
   )
 }
