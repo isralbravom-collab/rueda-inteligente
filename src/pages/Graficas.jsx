@@ -5,6 +5,8 @@ import { callIA, buildTrendPrompt } from '../hooks/useIA'
 Chart.register(...registerables)
 
 const ZC = ['#6db86a','#a8d5a2','#e8c97a','#e09850','#e07070']
+const ZL = ['Z1 Recuperación','Z2 Base aeróbica','Z3 Tempo','Z4 Umbral','Z5 VO2max']
+
 const CO = {
   responsive:true, maintainAspectRatio:false,
   plugins:{ legend:{ display:false } },
@@ -14,31 +16,161 @@ const CO = {
   }
 }
 
-function useChart(ref, config, deps) {
+// Helper: read cadence regardless of field name (Grok uses 'cadence', we use 'cad')
+function getCad(r) { return Math.round(r.cad || r.cadence || 0) }
+
+// Helper: read zones regardless of format
+function getZP(r) {
+  if (Array.isArray(r.zp) && r.zp.length === 5) return r.zp
+  if (Array.isArray(r.zones) && r.zones.length === 5) return r.zones
+  return null
+}
+
+// Helper: read FC
+function getHR(r) { return Math.round(r.hrAvg || r.hr_avg || r.averageHr || 0) }
+
+function MiniChart({ type='line', data, labels, color, fill=false, height=180, opts={} }) {
+  const ref  = useRef()
   const inst = useRef()
   useEffect(() => {
     if (!ref.current) return
     inst.current?.destroy()
-    inst.current = new Chart(ref.current, config)
+    const datasets = [{
+      data,
+      borderColor: color,
+      backgroundColor: fill ? color+'22' : 'transparent',
+      fill,
+      tension: 0.35,
+      pointRadius: 3,
+      pointBackgroundColor: color,
+      borderRadius: type==='bar' ? 4 : undefined,
+    }]
+    inst.current = new Chart(ref.current, {
+      type,
+      data: { labels, datasets },
+      options: { ...CO, ...opts }
+    })
     return () => inst.current?.destroy()
-  }, deps)
+  }, [JSON.stringify(data), JSON.stringify(labels)])
+  return <div style={{height,marginTop:8}}><canvas ref={ref}/></div>
 }
 
-function LineChart({ id, labels, datasets, opts={} }) {
-  const ref = useRef()
-  useChart(ref, { type:'line', data:{labels,datasets}, options:{...CO,...opts} }, [labels,datasets])
-  return <canvas ref={ref}/>
+function DualLineChart({ labels, data1, data2, color1, color2, label1, label2, height=180 }) {
+  const ref  = useRef()
+  const inst = useRef()
+  useEffect(() => {
+    if (!ref.current) return
+    inst.current?.destroy()
+    inst.current = new Chart(ref.current, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { data:data1, borderColor:color1, backgroundColor:'transparent', tension:0.3, pointRadius:3, pointBackgroundColor:color1, label:label1 },
+          { data:data2, borderColor:color2, backgroundColor:'transparent', tension:0.3, pointRadius:3, pointBackgroundColor:color2, label:label2, borderDash:[4,3] }
+        ]
+      },
+      options: { ...CO, plugins:{ legend:{ display:true, labels:{ color:'#9a9690', font:{size:11} } } } }
+    })
+    return () => inst.current?.destroy()
+  }, [JSON.stringify(data1), JSON.stringify(data2)])
+  return <div style={{height,marginTop:8}}><canvas ref={ref}/></div>
 }
 
-function BarChart({ labels, data, colors, opts={} }) {
-  const ref = useRef()
-  useChart(ref, { type:'bar', data:{labels,datasets:[{data,backgroundColor:colors,borderRadius:4}]}, options:{...CO,...opts} }, [labels,data])
-  return <canvas ref={ref}/>
+function CadenceChart({ labels, cads, height=180 }) {
+  const ref  = useRef()
+  const inst = useRef()
+  useEffect(() => {
+    if (!ref.current) return
+    inst.current?.destroy()
+    const validCads = cads.filter(c=>c>0)
+    const minY = validCads.length ? Math.max(0, Math.min(...validCads)-15) : 0
+    const maxY = validCads.length ? Math.max(...validCads)+15 : 120
+
+    inst.current = new Chart(ref.current, {
+      type: 'line',
+      data: {
+        labels,
+        datasets:[{
+          data: cads,
+          borderColor:'#e8c97a',
+          backgroundColor:'transparent',
+          tension:0.3,
+          pointRadius:3,
+          pointBackgroundColor: cads.map(c => c>=80&&c<=100?'#6db86a':'#e8c97a'),
+          label:'Cadencia'
+        }]
+      },
+      options: {
+        ...CO,
+        scales:{
+          x: CO.scales.x,
+          y: { ...CO.scales.y, min:minY, max:maxY }
+        }
+      },
+      plugins:[{
+        id:'optimalBand',
+        beforeDraw(chart) {
+          const { ctx, chartArea, scales:{ y } } = chart
+          if (!chartArea) return
+          const y80  = y.getPixelForValue(80)
+          const y100 = y.getPixelForValue(100)
+          ctx.save()
+          ctx.fillStyle = 'rgba(109,184,106,0.1)'
+          ctx.fillRect(chartArea.left, Math.min(y80,y100), chartArea.width, Math.abs(y100-y80))
+          ctx.strokeStyle = 'rgba(109,184,106,0.4)'
+          ctx.lineWidth = 1
+          ctx.setLineDash([4,3])
+          ;[y80,y100].forEach(y => {
+            ctx.beginPath(); ctx.moveTo(chartArea.left,y); ctx.lineTo(chartArea.right,y); ctx.stroke()
+          })
+          ctx.restore()
+        }
+      }]
+    })
+    return () => inst.current?.destroy()
+  }, [JSON.stringify(cads), JSON.stringify(labels)])
+  return <div style={{height,marginTop:8}}><canvas ref={ref}/></div>
+}
+
+function ZoneBarChart({ tzAvg, height=200 }) {
+  const ref  = useRef()
+  const inst = useRef()
+  useEffect(() => {
+    if (!ref.current) return
+    inst.current?.destroy()
+    inst.current = new Chart(ref.current, {
+      type: 'bar',
+      data: {
+        labels: ZL,
+        datasets:[{ data:tzAvg, backgroundColor:ZC, borderRadius:4 }]
+      },
+      options:{
+        ...CO,
+        indexAxis:'y',
+        plugins:{ legend:{ display:false } },
+        scales:{
+          x:{ ticks:{color:'#5c5a55',font:{size:10}}, grid:{color:'rgba(255,255,255,0.04)'}, beginAtZero:true },
+          y:{ ticks:{color:'#9a9690',font:{size:11}}, grid:{color:'rgba(255,255,255,0.04)'} }
+        }
+      }
+    })
+    return () => inst.current?.destroy()
+  }, [JSON.stringify(tzAvg)])
+  return <div style={{height,marginTop:8}}><canvas ref={ref}/></div>
 }
 
 export default function Graficas({ rides }) {
   const [iaText, setIaText]     = useState('')
   const [iaLoaded, setIaLoaded] = useState(false)
+
+  useEffect(() => {
+    if (rides.length >= 5 && !iaLoaded) {
+      setIaLoaded(true)
+      setIaText('Analizando...')
+      callIA(buildTrendPrompt(rides), 350).then(t => setIaText(t))
+    }
+  }, [rides.length])
 
   if (rides.length < 3) return (
     <div className="page">
@@ -52,97 +184,59 @@ export default function Graficas({ rides }) {
 
   const last   = rides.slice(0,20).reverse()
   const labels = last.map(r => r.fecha)
-  const speeds = last.map(r => parseFloat(r.speed||(r.dur>0?((r.dist||0)/(r.dur/60)).toFixed(1):0)))
-  const hrs    = last.map(r => Math.round(r.hrAvg||0))
-  const rpes   = last.map(r => r.rpe||0)
-  const z45s   = last.map(r => ((r.zp||[])[3]||0)+((r.zp||[])[4]||0))
-  const cads   = last.map(r => Math.round(r.cad||0))
-  const watts  = last.map(r => r.watts||0)
+
+  // Speed — handle both field names
+  const speeds = last.map(r => {
+    const s = r.speed || r.average_speed
+    if (s && s > 0) return parseFloat(parseFloat(s).toFixed(1))
+    return r.dur>0 ? parseFloat(((r.dist||0)/(r.dur/60)).toFixed(1)) : 0
+  })
+
+  // HR
+  const hrs  = last.map(r => getHR(r))
+  const hasHR = hrs.some(h => h > 0)
+
+  // Cadence — dual field support
+  const cads   = last.map(r => getCad(r))
   const hasCad = cads.some(c => c > 0)
+
+  // RPE & zones
+  const rpes = last.map(r => r.rpe || 0)
+  const z45s = last.map(r => {
+    const zp = getZP(r)
+    return zp ? (zp[3]||0)+(zp[4]||0) : 0
+  })
+
+  // Watts
+  const watts    = last.map(r => r.watts || r.average_watts || 0)
   const hasWatts = watts.some(w => w > 0)
 
-  // Weekly duration
+  // Weekly volume
   const wd = {}
   rides.forEach(r => {
-    const d = new Date(r.iso)
+    const d   = new Date(r.iso)
     const mon = new Date(d); mon.setDate(d.getDate()-((d.getDay()+6)%7))
-    const wk = mon.toLocaleDateString('es-MX',{day:'numeric',month:'short'})
-    wd[wk] = (wd[wk]||0) + (r.dur||0)
+    const wk  = mon.toLocaleDateString('es-MX',{day:'numeric',month:'short'})
+    wd[wk] = (wd[wk]||0)+(r.dur||0)
   })
   const wks = Object.keys(wd).slice(-8)
 
-  // Zone totals
+  // Zone distribution — accumulate across all rides
   const tz = [0,0,0,0,0]
-  rides.forEach(r => (r.zp||[]).forEach((p,i) => tz[i]+=p))
-  const tzAvg = tz.map(v => Math.round(v/rides.length))
-
-  useEffect(() => {
-    if (rides.length >= 5 && !iaLoaded) {
-      setIaLoaded(true)
-      setIaText('Analizando...')
-      callIA(buildTrendPrompt(rides), 350).then(t => setIaText(t))
+  let ridesWithZones = 0
+  rides.forEach(r => {
+    const zp = getZP(r)
+    if (zp && zp.some(v=>v>0)) {
+      zp.forEach((p,i) => tz[i]+=p)
+      ridesWithZones++
     }
-  }, [rides.length])
+  })
+  const tzAvg       = ridesWithZones > 0 ? tz.map(v => Math.round(v/ridesWithZones)) : []
+  const hasZoneData = tzAvg.length > 0 && tzAvg.some(v => v > 0)
 
-  // Cadence chart with optimal band annotation
-  const cadRef = useRef()
-  useEffect(() => {
-    if (!cadRef.current || !hasCad) return
-    const existing = Chart.getChart(cadRef.current)
-    if (existing) existing.destroy()
-
-    new Chart(cadRef.current, {
-      type: 'line',
-      data: {
-        labels,
-        datasets: [
-          {
-            data: cads,
-            borderColor: '#e8c97a',
-            backgroundColor: 'transparent',
-            tension: 0.3,
-            pointRadius: 3,
-            pointBackgroundColor: '#e8c97a',
-            label: 'Cadencia (rpm)'
-          }
-        ]
-      },
-      options: {
-        ...CO,
-        plugins: {
-          legend: { display: false },
-          annotation: undefined
-        },
-        scales: {
-          ...CO.scales,
-          y: {
-            ...CO.scales.y,
-            min: Math.max(0, Math.min(...cads.filter(c=>c>0)) - 10),
-            max: Math.max(...cads) + 10,
-            ticks: { color:'#5c5a55', font:{size:10} },
-            grid: { color:'rgba(255,255,255,0.04)' }
-          }
-        }
-      },
-      plugins: [{
-        id: 'optimalBand',
-        beforeDraw(chart) {
-          const { ctx, chartArea: { top, bottom }, scales: { y } } = chart
-          const y1 = y.getPixelForValue(80)
-          const y2 = y.getPixelForValue(100)
-          ctx.save()
-          ctx.fillStyle = 'rgba(109,184,106,0.12)'
-          ctx.fillRect(chart.chartArea.left, Math.min(y1,y2), chart.chartArea.width, Math.abs(y2-y1))
-          ctx.strokeStyle = 'rgba(109,184,106,0.4)'
-          ctx.lineWidth = 1
-          ctx.setLineDash([4,3])
-          ctx.beginPath(); ctx.moveTo(chart.chartArea.left,y1); ctx.lineTo(chart.chartArea.right,y1); ctx.stroke()
-          ctx.beginPath(); ctx.moveTo(chart.chartArea.left,y2); ctx.lineTo(chart.chartArea.right,y2); ctx.stroke()
-          ctx.restore()
-        }
-      }]
-    })
-  }, [cads, labels])
+  // Polarization
+  const lowPct  = hasZoneData ? tzAvg[0]+tzAvg[1] : 0
+  const highPct = hasZoneData ? tzAvg[3]+tzAvg[4] : 0
 
   return (
     <div className="page">
@@ -151,86 +245,86 @@ export default function Graficas({ rides }) {
         <p>Detecta mejoras, estancamiento y distribución de carga</p>
       </div>
 
+      {/* Speed + HR */}
       <div className="g2" style={{marginBottom:20}}>
         <div className="card">
           <div className="stit">Velocidad promedio (km/h)</div>
-          <div style={{height:200,marginTop:12}}>
-            <LineChart labels={labels} datasets={[{data:speeds,borderColor:'#a8d5a2',backgroundColor:'#a8d5a222',fill:true,tension:0.35,pointRadius:3,pointBackgroundColor:'#a8d5a2'}]}/>
-          </div>
+          <MiniChart labels={labels} data={speeds} color="#a8d5a2" fill height={180}/>
         </div>
         <div className="card">
           <div className="stit">FC promedio por rodada (lpm)</div>
-          <div style={{height:200,marginTop:12}}>
-            <LineChart labels={labels} datasets={[{data:hrs,borderColor:'#7ab8e8',backgroundColor:'#7ab8e822',fill:true,tension:0.35,pointRadius:3,pointBackgroundColor:'#7ab8e8'}]}/>
-          </div>
+          {hasHR
+            ? <MiniChart labels={labels} data={hrs} color="#7ab8e8" fill height={180}/>
+            : <div style={{height:180,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text3)',fontSize:13}}>Sin datos de FC en estas rodadas</div>
+          }
         </div>
       </div>
 
-      {/* Cadence chart */}
-      {hasCad && (
+      {/* Cadence */}
+      {hasCad ? (
         <div className="card" style={{marginBottom:20}}>
           <div className="stit">Cadencia promedio (rpm)</div>
-          <div style={{fontSize:11,color:'var(--text3)',marginTop:2,marginBottom:8}}>Banda verde = rango óptimo 80-100 rpm (Lucia et al. 2001)</div>
-          <div style={{height:200}}>
-            <canvas ref={cadRef}/>
+          <div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>Banda verde = rango óptimo 80-100 rpm · puntos verdes = dentro del rango (Lucia et al. 2001)</div>
+          <CadenceChart labels={labels} cads={cads} height={190}/>
+          <div style={{display:'flex',gap:20,marginTop:8,fontSize:11,fontFamily:'var(--fm)',color:'var(--text3)'}}>
+            <span>Promedio: <strong style={{color:'var(--text)'}}>{Math.round(cads.filter(c=>c>0).reduce((a,b)=>a+b,0)/Math.max(cads.filter(c=>c>0).length,1))} rpm</strong></span>
+            <span>En rango óptimo: <strong style={{color:'#6db86a'}}>{cads.filter(c=>c>=80&&c<=100).length}/{cads.filter(c=>c>0).length} rodadas</strong></span>
           </div>
-          {cads.filter(c=>c>0).length > 0 && (
-            <div style={{fontSize:11,color:'var(--text3)',marginTop:8,fontFamily:'var(--fm)'}}>
-              Promedio: <strong style={{color:'var(--text)'}}>{Math.round(cads.filter(c=>c>0).reduce((a,b)=>a+b,0)/cads.filter(c=>c>0).length)} rpm</strong>
-              {rides.some(r=>r.cadPctOptimal>0) && (
-                <span style={{marginLeft:16}}>% tiempo óptimo prom: <strong style={{color:'var(--text)'}}>{Math.round(rides.filter(r=>r.cadPctOptimal>0).reduce((a,r)=>a+r.cadPctOptimal,0)/rides.filter(r=>r.cadPctOptimal>0).length)}%</strong></span>
-              )}
-            </div>
-          )}
+        </div>
+      ) : (
+        <div className="card" style={{marginBottom:20,padding:'14px 18px'}}>
+          <div className="stit">Cadencia</div>
+          <p style={{fontSize:13,color:'var(--text3)',marginTop:8}}>Sin datos de cadencia aún. Se mostrará cuando sincronices rodadas con sensor de cadencia.</p>
         </div>
       )}
 
-      {/* Watts chart */}
+      {/* Watts */}
       {hasWatts && (
         <div className="card" style={{marginBottom:20}}>
           <div className="stit">Potencia estimada (W)</div>
-          <div style={{fontSize:11,color:'var(--text3)',marginTop:2,marginBottom:8}}>Calculada por física: resistencia rodadura + aerodinámica + gravedad</div>
-          <div style={{height:180,marginTop:4}}>
-            <LineChart labels={labels} datasets={[{data:watts,borderColor:'#e09850',backgroundColor:'rgba(224,152,80,0.15)',fill:true,tension:0.3,pointRadius:3,pointBackgroundColor:'#e09850'}]}/>
-          </div>
+          <div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>Calculada por física: resistencia rodadura + aerodinámica + gravedad</div>
+          <MiniChart labels={labels} data={watts} color="#e09850" fill={true} height={160}
+            opts={{...CO,scales:{...CO.scales,y:{...CO.scales.y,beginAtZero:true}}}}/>
         </div>
       )}
 
+      {/* Weekly + RPE vs Z45 */}
       <div className="g2" style={{marginBottom:20}}>
         <div className="card">
-          <div className="stit">Duración semanal (min)</div>
-          <div style={{height:200,marginTop:12}}>
-            <LineChart labels={wks} datasets={[{data:wks.map(w=>Math.round(wd[w])),borderColor:'#7ab8e8',backgroundColor:'rgba(122,184,232,0.2)',fill:true,tension:0.3,pointRadius:3,pointBackgroundColor:'#7ab8e8'}]}
-              opts={{...CO,scales:{...CO.scales,y:{...CO.scales.y,beginAtZero:true}}}}/>
-          </div>
+          <div className="stit">Duración semanal acumulada (min)</div>
+          <MiniChart type="bar" labels={wks} data={wks.map(w=>Math.round(wd[w]))}
+            color="#7ab8e8" height={180}
+            opts={{...CO,scales:{...CO.scales,y:{...CO.scales.y,beginAtZero:true}}}}/>
         </div>
         <div className="card">
           <div className="stit">RPE vs Zona alta (Z4+Z5 % ÷10)</div>
-          <div style={{height:200,marginTop:12}}>
-            <LineChart labels={labels}
-              datasets={[
-                {data:rpes,borderColor:'#e09850',backgroundColor:'transparent',tension:0.3,pointRadius:3,pointBackgroundColor:'#e09850',label:'RPE'},
-                {data:z45s.map(v=>v/10),borderColor:'#e07070',backgroundColor:'transparent',tension:0.3,pointRadius:3,pointBackgroundColor:'#e07070',label:'Z4+Z5/10',borderDash:[4,3]}
-              ]}
-              opts={{...CO,plugins:{legend:{display:true,labels:{color:'#9a9690',font:{size:11}}}}}}/>
-          </div>
+          <DualLineChart labels={labels} data1={rpes} data2={z45s.map(v=>v/10)}
+            color1="#e09850" color2="#e07070" label1="RPE" label2="Z4+Z5/10" height={180}/>
         </div>
       </div>
 
+      {/* Zone distribution */}
       <div className="card" style={{marginBottom:20}}>
         <div className="stit">Distribución de zonas FC — promedio acumulado</div>
-        <div style={{fontSize:11,color:'var(--text3)',marginTop:2,marginBottom:8}}>
-          Polarización actual: <strong style={{color:'var(--text)'}}>{tzAvg[0]+tzAvg[1]}%</strong> baja intensidad / <strong style={{color:'var(--text)'}}>{tzAvg[3]+tzAvg[4]}%</strong> alta · ideal 80/20 (Seiler 2010)
-        </div>
-        <div style={{height:200,marginTop:4}}>
-          <BarChart
-            labels={['Z1 recuperación','Z2 base aeróbica','Z3 tempo','Z4 umbral','Z5 VO2max']}
-            data={tzAvg} colors={ZC}
-            opts={{...CO,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#5c5a55',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'},beginAtZero:true},y:{ticks:{color:'#9a9690',font:{size:11}},grid:{color:'rgba(255,255,255,0.04)'}}}}}/>
-        </div>
+        {hasZoneData ? (
+          <>
+            <div style={{fontSize:11,color:'var(--text3)',marginTop:4}}>
+              Basado en <strong style={{color:'var(--text)'}}>{ridesWithZones}</strong> rodadas con FC ·
+              Polarización: <strong style={{color:lowPct>=70?'#6db86a':'#e09850'}}>{lowPct}%</strong> baja /
+              <strong style={{color:highPct>40?'#e09850':'var(--text2)',marginLeft:4}}>{highPct}%</strong> alta · ideal 80/20 (Seiler 2010)
+            </div>
+            <ZoneBarChart tzAvg={tzAvg} height={200}/>
+          </>
+        ) : (
+          <div style={{padding:'20px 0',color:'var(--text3)',fontSize:13}}>
+            Sin datos de zonas FC aún. Se mostrarán cuando sincronices rodadas con sensor de FC o importes GPX con datos de ritmo cardíaco.
+          </div>
+        )}
       </div>
 
-      {(iaText||rides.length>=5) && <IABox text={iaText} label="Análisis de tendencia IA" loading={iaText==='Analizando...'}/>}
+      {(iaText||rides.length>=5) && (
+        <IABox text={iaText} label="Análisis de tendencia IA" loading={iaText==='Analizando...'}/>
+      )}
     </div>
   )
 }
