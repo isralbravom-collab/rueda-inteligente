@@ -1,10 +1,13 @@
-// src/components/RideCard.jsx
 import React from 'react'
 import ZoneBars from './ZoneBars'
 
 export default function RideCard({ ride, deleteRide, profile }) {
   const speed = ride.dur > 0 ? (ride.dist / (ride.dur / 60)).toFixed(1) : '0'
-  const hasFC = ride.hrAvg > 0
+  const hasFC = ride.hrAvg > 0 || (ride.zones && ride.zones.some(z => z > 0))
+
+  // Normalizamos las zonas (aceptamos zp o zones)
+  const zonesData = ride.zones || ride.zp || [0, 0, 0, 0, 0]
+
   const intensityColor = ride.rpe >= 8 ? '#ef4444' : ride.rpe >= 6 ? '#f59e0b' : '#4ade80'
 
   return (
@@ -40,7 +43,7 @@ export default function RideCard({ ride, deleteRide, profile }) {
             color: '#d1d5db', 
             fontSize: '13px' 
           }}>
-            {ride.sen}
+            {ride.sen || '—'}
           </div>
           <button 
             onClick={() => { if (confirm('¿Eliminar esta rodada?')) deleteRide(ride.id || ride.stravaId) }}
@@ -55,11 +58,11 @@ export default function RideCard({ ride, deleteRide, profile }) {
       <div style={{ padding: '20px', background: '#111827' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(90px, 1fr))', gap: '16px', marginBottom: 20 }}>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '28px', fontWeight: 700 }}>{Math.round(ride.dur)}</div>
+            <div style={{ fontSize: '28px', fontWeight: 700 }}>{Math.round(ride.dur || 0)}</div>
             <div style={{ fontSize: '12px', color: '#9ca3af' }}>MINUTOS</div>
           </div>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '28px', fontWeight: 700 }}>{ride.dist?.toFixed(1) || 0}</div>
+            <div style={{ fontSize: '28px', fontWeight: 700 }}>{(ride.dist || 0).toFixed(1)}</div>
             <div style={{ fontSize: '12px', color: '#9ca3af' }}>KM</div>
           </div>
           <div style={{ textAlign: 'center' }}>
@@ -68,7 +71,7 @@ export default function RideCard({ ride, deleteRide, profile }) {
           </div>
           {hasFC && (
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '28px', fontWeight: 700, color: '#60a5fa' }}>{ride.hrAvg}</div>
+              <div style={{ fontSize: '28px', fontWeight: 700, color: '#60a5fa' }}>{ride.hrAvg || '—'}</div>
               <div style={{ fontSize: '12px', color: '#9ca3af' }}>FC PROM</div>
             </div>
           )}
@@ -87,14 +90,8 @@ export default function RideCard({ ride, deleteRide, profile }) {
           </div>
         )}
 
-        {/* Zonas de FC */}
-        {hasFC ? (
-          <ZoneBars zp={ride.zp || [0,0,0,0,0]} />
-        ) : (
-          <div style={{ color: '#9ca3af', fontSize: '13px', padding: '8px 0' }}>
-            Sin sensor FC — zonas no disponibles
-          </div>
-        )}
+        {/* Zonas de FC - siempre visibles */}
+        <ZoneBars zp={zonesData} />
 
         {/* Análisis IA */}
         {ride.ia && (
