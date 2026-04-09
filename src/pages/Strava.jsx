@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react'
 function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
 function load(k, d) { try { return JSON.parse(localStorage.getItem(k)) || d } catch { return d } }
 
-// RPE automático con FC + Cadencia
 function estimateRPE(hrAvg, cadence = 0, fcmax = 185) {
   if (!hrAvg || hrAvg < 40) return 5
   const pct = hrAvg / fcmax * 100
@@ -17,7 +16,6 @@ function estimateRPE(hrAvg, cadence = 0, fcmax = 185) {
   else if (pct < 92) rpe = 8
   else if (pct < 96) rpe = 9
   else rpe = 10
-
   if (cadence > 85) rpe = Math.min(10, rpe + 1)
   if (cadence > 95) rpe = Math.min(10, rpe + 1)
   return rpe
@@ -168,9 +166,7 @@ export default function Strava({ rides, addRide, isDuplicate, profile, clearAllR
   }
 
   function saveOne(ride) {
-    if (!rpeInputs[ride.stravaId] || !senInputs[ride.stravaId]) {
-      return alert('Falta RPE o sensación')
-    }
+    if (!rpeInputs[ride.stravaId] || !senInputs[ride.stravaId]) return alert('Falta RPE o sensación')
     const dupe = isDuplicate(ride)
     if (dupe && !confirm(`Ya tienes una rodada similar el ${dupe.fecha}. ¿Guardar?`)) return
 
@@ -239,11 +235,7 @@ export default function Strava({ rides, addRide, isDuplicate, profile, clearAllR
       </div>
 
       {rides.length > 0 && (
-        <button 
-          onClick={clearAllHistory}
-          className="btn bs"
-          style={{width:'100%', marginBottom:24, background:'#ef4444', color:'white'}}
-        >
+        <button onClick={clearAllHistory} className="btn bs" style={{width:'100%', marginBottom:24, background:'#ef4444', color:'white'}}>
           🗑️ Limpiar TODO el historial
         </button>
       )}
@@ -280,28 +272,22 @@ export default function Strava({ rides, addRide, isDuplicate, profile, clearAllR
 
                 <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
                   <div>
-                    <label>RPE (Esfuerzo percibido)</label>
+                    <label>RPE</label>
                     <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:6}}>
                       {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                        <button 
-                          key={n} 
-                          className={`rb ${rpeInputs[ride.stravaId] === n ? 'sel' : ''}`}
-                          onClick={() => setRpeInputs(p => ({...p, [ride.stravaId]: n}))}
-                        >
+                        <button key={n} className={`rb ${rpeInputs[ride.stravaId] === n ? 'sel' : ''}`}
+                          onClick={() => setRpeInputs(p => ({...p, [ride.stravaId]: n}))}>
                           {n}
                         </button>
                       ))}
                     </div>
                   </div>
                   <div>
-                    <label>Sensación posterior</label>
+                    <label>Sensación</label>
                     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
                       {['muy bien','bien','regular','cansado','muy cansado','con molestias'].map(s => (
-                        <button 
-                          key={s} 
-                          className={`sb2 ${senInputs[ride.stravaId] === s ? 'sel' : ''}`}
-                          onClick={() => setSenInputs(p => ({...p, [ride.stravaId]: s}))}
-                        >
+                        <button key={s} className={`sb2 ${senInputs[ride.stravaId] === s ? 'sel' : ''}`}
+                          onClick={() => setSenInputs(p => ({...p, [ride.stravaId]: s}))}>
                           {s.charAt(0).toUpperCase() + s.slice(1)}
                         </button>
                       ))}
