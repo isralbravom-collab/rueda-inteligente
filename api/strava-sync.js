@@ -16,6 +16,9 @@ export default async function handler(req, res) {
     let page = 1;
     const perPage = 200;
 
+    // === FILTRO DE ANTIGÜEDAD: últimos 6 meses (puedes cambiar 180 a 90 o 365) ===
+    const sixMonthsAgo = Math.floor((Date.now() - 180 * 24 * 60 * 60 * 1000) / 1000);
+
     while (true) {
       const response = await fetch(
         `https://www.strava.com/api/v3/athlete/activities?page=${page}&per_page=${perPage}`,
@@ -35,42 +38,48 @@ export default async function handler(req, res) {
       await new Promise(r => setTimeout(r, 300));
     }
 
-    // === PROCESAMIENTO MEJORADO ===
-    const processedRides = allActivities.map(activity => {
-      const movingMinutes = Math.round((activity.moving_time || 0) / 60);        // ← TIEMPO REAL EN MOVIMIENTO
-      const distanceKm = Math.round((activity.distance || 0) / 1000 * 100) / 100;
-      const elevationM = Math.round(activity.total_elevation_gain || 0);
+    // === FILTRO SOLO BICICLETA + PROCESAMIENTO ===
+    const cyclingTypes = ['Ride', 'MountainBikeRide', 'GravelRide', 'EBikeRide', 'VirtualRide'];
 
-      // Velocidad promedio correcta (Strava ya la calcula)
-      let avgSpeed = activity.average_speed 
-        ? Math.round(activity.average_speed * 3.6 * 10) / 10   // m/s → km/h
-        : movingMinutes > 0 
-          ? Math.round((distanceKm / movingMinutes) * 60 * 10) / 10 
-          : 0;
+    const processedRides = allActivities
+      .filter(activity => {
+        const type = activity.sport_type || activity.type || '';
+        return cyclingTypes.includes(type);
+      })
+      .map(activity => {
+        const movingMinutes = Math.round((activity.moving_time || 0) / 60);
+        const distanceKm = Math.round((activity.distance || 0) / 1000 * 100) / 100;
+        const elevationM = Math.round(activity.total_elevation_gain || 0);
 
-      const startDate = activity.start_date || '';
-      const fecha = startDate 
-        ? new Date(startDate).toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' })
-        : '';
+        let avgSpeed = activity.average_speed 
+          ? Math.round(activity.average_speed * 3.6 * 10) / 10 
+          : movingMinutes > 0 
+            ? Math.round((distanceKm / movingMinutes) * 60 * 10) / 10 
+            : 0;
 
-      return {
-        stravaId: activity.id?.toString(),
-        name: activity.name || 'Rodada sin nombre',
-        iso: startDate,
-        fecha: fecha,
-        dur: movingMinutes,                    // ← USAMOS MOVING TIME
-        dist: distanceKm,
-        eg: elevationM,
-        hrAvg: Math.round(activity.average_heartrate || 0),
-        hrMax: Math.round(activity.max_heartrate || 0),
-        cadence: Math.round(activity.average_cadence || 0),   // ← Cadencia real
-        avgSpeed: avgSpeed,                                    // ← Velocidad correcta
-        fromStrava: true,
-        sport_type: activity.sport_type,
-      };
-    });
+        const startDate = activity.start_date || '';
+        const fecha = startDate 
+          ? new Date(startDate).toLocaleDateString('es-MX', { weekday: 'short', day: '2-digit', month: 'short' })
+          : '';
 
-    console.log(`✅ Procesadas ${processedRides.length} rodadas correctamente`);
+        return {
+          stravaId: activity.id?.toString(),
+          name: activity.name || 'Rodada sin nombre',
+          iso: startDate,
+          fecha: fecha,
+          dur: movingMinutes,
+          dist: distanceKm,
+          eg: elevationM,
+          hrAvg: Math.round(activity.average_heartrate || 0),
+          hrMax: Math.round(activity.max_heartrate || 0),
+          cadence: Math.round(activity.average_cadence || 0),
+          avgSpeed: avgSpeed,
+          fromStrava: true,
+          sport_type: activity.sport_type,
+        };
+      });
+
+    console.log(`✅ Procesadas ${processedRides.length} rodadas de BICICLETA (de ${allActivities.length} actividades totales)`);
 
     return res.status(200).json({
       success: true,
