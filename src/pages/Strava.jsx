@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { Bike, RefreshCw, CheckCircle, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 export default function StravaPage() {
@@ -24,27 +23,21 @@ export default function StravaPage() {
         { id: Date.now()+3, name: "Recovery Spin", fecha: "07 abr 2026", dur: 65, dist: 24.8, eg: 120, hrAvg: 128, rpe: 4, sen: "fresco", cadence: 90, zones: [55, 35, 8, 2, 0] },
       ];
 
-      // Cargar existentes
       let existing = [];
       try {
         const saved = localStorage.getItem('ri3_rides');
         if (saved) existing = JSON.parse(saved);
       } catch (e) {}
 
-      // Filtrar duplicados (mismo nombre + misma fecha)
       const filteredNew = newRides.filter(newRide => 
-        !existing.some(old => 
-          old.name === newRide.name && 
-          old.fecha === newRide.fecha
-        )
+        !existing.some(old => old.name === newRide.name && old.fecha === newRide.fecha)
       );
 
       const allRides = [...existing, ...filteredNew];
-
       localStorage.setItem('ri3_rides', JSON.stringify(allRides));
 
       setIsSyncing(false);
-      setSyncMessage(`¡Sincronización completada! Agregadas ${filteredNew.length} nuevas rodadas. Total: ${allRides.length}`);
+      setSyncMessage(`¡Sincronización completada! Agregadas ${filteredNew.length} nuevas. Total: ${allRides.length}`);
     }, 1500);
   };
 
@@ -57,12 +50,15 @@ export default function StravaPage() {
 
       <div style={{ background: '#18181b', padding: '40px', borderRadius: '16px', maxWidth: '700px', marginTop: '30px' }}>
         {!isConnected ? (
-          <button onClick={handleConnect} style={{ padding: '14px 40px', background: '#10b981', color: 'white', border: 'none', borderRadius: '12px', fontSize: '17px' }}>
+          <button 
+            onClick={handleConnect}
+            style={{ padding: '14px 40px', background: '#10b981', color: 'white', border: 'none', borderRadius: '12px', fontSize: '17px' }}
+          >
             Conectar con Strava
           </button>
         ) : (
           <>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <div>✅ Conectado • Israel</div>
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button 
@@ -72,7 +68,10 @@ export default function StravaPage() {
                 >
                   {isSyncing ? 'Sincronizando...' : 'Sincronizar ahora'}
                 </button>
-                <button onClick={() => setIsConnected(false)} style={{ padding: '12px 24px', background: '#444', color: 'white', border: 'none', borderRadius: '12px' }}>
+                <button 
+                  onClick={() => setIsConnected(false)}
+                  style={{ padding: '12px 24px', background: '#444', color: 'white', border: 'none', borderRadius: '12px' }}
+                >
                   Desconectar
                 </button>
               </div>
