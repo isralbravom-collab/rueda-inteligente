@@ -5,21 +5,39 @@ import { callIA, buildTrendPrompt } from '../hooks/useIA'
 Chart.register(...registerables)
 
 const ZC = ['#6db86a','#a8d5a2','#e8c97a','#e09850','#e07070']
-const CO = { responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#5c5a55',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'}},y:{ticks:{color:'#5c5a55',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'},beginAtZero:false}} }
+const CO = {
+  responsive:true, maintainAspectRatio:false,
+  plugins:{ legend:{ display:false } },
+  scales:{
+    x:{ ticks:{color:'#5c5a55',font:{size:10}}, grid:{color:'rgba(255,255,255,0.04)'} },
+    y:{ ticks:{color:'#5c5a55',font:{size:10}}, grid:{color:'rgba(255,255,255,0.04)'}, beginAtZero:false }
+  }
+}
 
-function LineChart({ id, labels, datasets, opts = {} }) {
-  const ref = useRef(); const inst = useRef()
+function useChart(ref, config, deps) {
+  const inst = useRef()
   useEffect(() => {
     if (!ref.current) return
     inst.current?.destroy()
-    inst.current = new Chart(ref.current, { type:'line', data:{labels,datasets}, options:{...CO,...opts} })
+    inst.current = new Chart(ref.current, config)
     return () => inst.current?.destroy()
-  }, [labels, datasets])
+  }, deps)
+}
+
+function LineChart({ id, labels, datasets, opts={} }) {
+  const ref = useRef()
+  useChart(ref, { type:'line', data:{labels,datasets}, options:{...CO,...opts} }, [labels,datasets])
+  return <canvas ref={ref}/>
+}
+
+function BarChart({ labels, data, colors, opts={} }) {
+  const ref = useRef()
+  useChart(ref, { type:'bar', data:{labels,datasets:[{data,backgroundColor:colors,borderRadius:4}]}, options:{...CO,...opts} }, [labels,data])
   return <canvas ref={ref}/>
 }
 
 export default function Graficas({ rides }) {
-  const [iaText, setIaText] = useState('')
+  const [iaText, setIaText]     = useState('')
   const [iaLoaded, setIaLoaded] = useState(false)
 
   if (rides.length < 3) return (
@@ -32,36 +50,99 @@ export default function Graficas({ rides }) {
     </div>
   )
 
-  const last = [...rides].slice(0,20).reverse()  // oldest first for chronological charts
-  const labels = last.map(r=>r.fecha)
-  const speeds = last.map(r=>r.dur>0?parseFloat(((r.dist||0)/(r.dur/60)).toFixed(1)):0)
-  const hrs = last.map(r=>Math.round(r.hrAvg||0))
-  const rpes = last.map(r=>r.rpe||0)
-  const z45s = last.map(r=>((r.zp||[])[3]||0)+((r.zp||[])[4]||0))
+  const last   = rides.slice(0,20).reverse()
+  const labels = last.map(r => r.fecha)
+  const speeds = last.map(r => parseFloat(r.speed||(r.dur>0?((r.dist||0)/(r.dur/60)).toFixed(1):0)))
+  const hrs    = last.map(r => Math.round(r.hrAvg||0))
+  const rpes   = last.map(r => r.rpe||0)
+  const z45s   = last.map(r => ((r.zp||[])[3]||0)+((r.zp||[])[4]||0))
+  const cads   = last.map(r => Math.round(r.cad||0))
+  const watts  = last.map(r => r.watts||0)
+  const hasCad = cads.some(c => c > 0)
+  const hasWatts = watts.some(w => w > 0)
 
-  // Group by ISO week (Monday-based) for accurate weekly volume
+  // Weekly duration
   const wd = {}
   rides.forEach(r => {
     const d = new Date(r.iso)
-    const mon = new Date(d); mon.setDate(d.getDate() - ((d.getDay()+6)%7))
+    const mon = new Date(d); mon.setDate(d.getDate()-((d.getDay()+6)%7))
     const wk = mon.toLocaleDateString('es-MX',{day:'numeric',month:'short'})
     wd[wk] = (wd[wk]||0) + (r.dur||0)
   })
   const wks = Object.keys(wd).slice(-8)
 
+  // Zone totals
   const tz = [0,0,0,0,0]
-  rides.forEach(r=>(r.zp||[]).forEach((p,i)=>tz[i]+=p))
-  const tzAvg = tz.map(v=>Math.round(v/rides.length))
+  rides.forEach(r => (r.zp||[]).forEach((p,i) => tz[i]+=p))
+  const tzAvg = tz.map(v => Math.round(v/rides.length))
 
-  async function loadIA() {
-    if (iaLoaded) return
-    setIaLoaded(true)
-    setIaText('Analizando...')
-    const t = await callIA(buildTrendPrompt(rides), 300)
-    setIaText(t)
-  }
+  useEffect(() => {
+    if (rides.length >= 5 && !iaLoaded) {
+      setIaLoaded(true)
+      setIaText('Analizando...')
+      callIA(buildTrendPrompt(rides), 350).then(t => setIaText(t))
+    }
+  }, [rides.length])
 
-  useEffect(()=>{ if(rides.length>=5&&!iaLoaded) loadIA() },[rides.length])
+  // Cadence chart with optimal band annotation
+  const cadRef = useRef()
+  useEffect(() => {
+    if (!cadRef.current || !hasCad) return
+    const existing = Chart.getChart(cadRef.current)
+    if (existing) existing.destroy()
+
+    new Chart(cadRef.current, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            data: cads,
+            borderColor: '#e8c97a',
+            backgroundColor: 'transparent',
+            tension: 0.3,
+            pointRadius: 3,
+            pointBackgroundColor: '#e8c97a',
+            label: 'Cadencia (rpm)'
+          }
+        ]
+      },
+      options: {
+        ...CO,
+        plugins: {
+          legend: { display: false },
+          annotation: undefined
+        },
+        scales: {
+          ...CO.scales,
+          y: {
+            ...CO.scales.y,
+            min: Math.max(0, Math.min(...cads.filter(c=>c>0)) - 10),
+            max: Math.max(...cads) + 10,
+            ticks: { color:'#5c5a55', font:{size:10} },
+            grid: { color:'rgba(255,255,255,0.04)' }
+          }
+        }
+      },
+      plugins: [{
+        id: 'optimalBand',
+        beforeDraw(chart) {
+          const { ctx, chartArea: { top, bottom }, scales: { y } } = chart
+          const y1 = y.getPixelForValue(80)
+          const y2 = y.getPixelForValue(100)
+          ctx.save()
+          ctx.fillStyle = 'rgba(109,184,106,0.12)'
+          ctx.fillRect(chart.chartArea.left, Math.min(y1,y2), chart.chartArea.width, Math.abs(y2-y1))
+          ctx.strokeStyle = 'rgba(109,184,106,0.4)'
+          ctx.lineWidth = 1
+          ctx.setLineDash([4,3])
+          ctx.beginPath(); ctx.moveTo(chart.chartArea.left,y1); ctx.lineTo(chart.chartArea.right,y1); ctx.stroke()
+          ctx.beginPath(); ctx.moveTo(chart.chartArea.left,y2); ctx.lineTo(chart.chartArea.right,y2); ctx.stroke()
+          ctx.restore()
+        }
+      }]
+    })
+  }, [cads, labels])
 
   return (
     <div className="page">
@@ -85,11 +166,41 @@ export default function Graficas({ rides }) {
         </div>
       </div>
 
+      {/* Cadence chart */}
+      {hasCad && (
+        <div className="card" style={{marginBottom:20}}>
+          <div className="stit">Cadencia promedio (rpm)</div>
+          <div style={{fontSize:11,color:'var(--text3)',marginTop:2,marginBottom:8}}>Banda verde = rango óptimo 80-100 rpm (Lucia et al. 2001)</div>
+          <div style={{height:200}}>
+            <canvas ref={cadRef}/>
+          </div>
+          {cads.filter(c=>c>0).length > 0 && (
+            <div style={{fontSize:11,color:'var(--text3)',marginTop:8,fontFamily:'var(--fm)'}}>
+              Promedio: <strong style={{color:'var(--text)'}}>{Math.round(cads.filter(c=>c>0).reduce((a,b)=>a+b,0)/cads.filter(c=>c>0).length)} rpm</strong>
+              {rides.some(r=>r.cadPctOptimal>0) && (
+                <span style={{marginLeft:16}}>% tiempo óptimo prom: <strong style={{color:'var(--text)'}}>{Math.round(rides.filter(r=>r.cadPctOptimal>0).reduce((a,r)=>a+r.cadPctOptimal,0)/rides.filter(r=>r.cadPctOptimal>0).length)}%</strong></span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Watts chart */}
+      {hasWatts && (
+        <div className="card" style={{marginBottom:20}}>
+          <div className="stit">Potencia estimada (W)</div>
+          <div style={{fontSize:11,color:'var(--text3)',marginTop:2,marginBottom:8}}>Calculada por física: resistencia rodadura + aerodinámica + gravedad</div>
+          <div style={{height:180,marginTop:4}}>
+            <LineChart labels={labels} datasets={[{data:watts,borderColor:'#e09850',backgroundColor:'rgba(224,152,80,0.15)',fill:true,tension:0.3,pointRadius:3,pointBackgroundColor:'#e09850'}]}/>
+          </div>
+        </div>
+      )}
+
       <div className="g2" style={{marginBottom:20}}>
         <div className="card">
-          <div className="stit">Duración semanal acumulada (min)</div>
+          <div className="stit">Duración semanal (min)</div>
           <div style={{height:200,marginTop:12}}>
-            <LineChart labels={wks} datasets={[{data:wks.map(w=>Math.round(wd[w])),borderColor:'#7ab8e8',backgroundColor:'rgba(122,184,232,0.25)',fill:true,tension:0.3,pointRadius:3,pointBackgroundColor:'#7ab8e8'}]}
+            <LineChart labels={wks} datasets={[{data:wks.map(w=>Math.round(wd[w])),borderColor:'#7ab8e8',backgroundColor:'rgba(122,184,232,0.2)',fill:true,tension:0.3,pointRadius:3,pointBackgroundColor:'#7ab8e8'}]}
               opts={{...CO,scales:{...CO.scales,y:{...CO.scales.y,beginAtZero:true}}}}/>
           </div>
         </div>
@@ -108,27 +219,18 @@ export default function Graficas({ rides }) {
 
       <div className="card" style={{marginBottom:20}}>
         <div className="stit">Distribución de zonas FC — promedio acumulado</div>
-        <div style={{height:220,marginTop:12}}>
-          <BarChart labels={['Z1 recuperación','Z2 base aeróbica','Z3 tempo','Z4 umbral','Z5 VO2max']} data={tzAvg} colors={ZC}/>
+        <div style={{fontSize:11,color:'var(--text3)',marginTop:2,marginBottom:8}}>
+          Polarización actual: <strong style={{color:'var(--text)'}}>{tzAvg[0]+tzAvg[1]}%</strong> baja intensidad / <strong style={{color:'var(--text)'}}>{tzAvg[3]+tzAvg[4]}%</strong> alta · ideal 80/20 (Seiler 2010)
+        </div>
+        <div style={{height:200,marginTop:4}}>
+          <BarChart
+            labels={['Z1 recuperación','Z2 base aeróbica','Z3 tempo','Z4 umbral','Z5 VO2max']}
+            data={tzAvg} colors={ZC}
+            opts={{...CO,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#5c5a55',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'},beginAtZero:true},y:{ticks:{color:'#9a9690',font:{size:11}},grid:{color:'rgba(255,255,255,0.04)'}}}}}/>
         </div>
       </div>
 
       {(iaText||rides.length>=5) && <IABox text={iaText} label="Análisis de tendencia IA" loading={iaText==='Analizando...'}/>}
     </div>
   )
-}
-
-function BarChart({ labels, data, colors }) {
-  const ref = useRef(); const inst = useRef()
-  useEffect(() => {
-    if (!ref.current) return
-    inst.current?.destroy()
-    inst.current = new Chart(ref.current, {
-      type:'bar',
-      data:{labels,datasets:[{data,backgroundColor:colors,borderRadius:4}]},
-      options:{...CO,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#5c5a55',font:{size:10}},grid:{color:'rgba(255,255,255,0.04)'},beginAtZero:true},y:{ticks:{color:'#9a9690',font:{size:11}},grid:{color:'rgba(255,255,255,0.04)'}}}}
-    })
-    return () => inst.current?.destroy()
-  }, [labels, data])
-  return <canvas ref={ref}/>
 }
