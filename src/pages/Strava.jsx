@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react'
 function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
 function load(k, d) { try { return JSON.parse(localStorage.getItem(k)) || d } catch { return d } }
 
-// RPE automático con FC + Cadencia
 function estimateRPE(hrAvg, cadence = 0, fcmax = 185) {
   if (!hrAvg || hrAvg < 40) return 5
   const pct = hrAvg / fcmax * 100
@@ -17,7 +16,6 @@ function estimateRPE(hrAvg, cadence = 0, fcmax = 185) {
   else if (pct < 92) rpe = 8
   else if (pct < 96) rpe = 9
   else rpe = 10
-
   if (cadence > 85) rpe = Math.min(10, rpe + 1)
   if (cadence > 95) rpe = Math.min(10, rpe + 1)
   return rpe
@@ -26,7 +24,6 @@ function estimateRPE(hrAvg, cadence = 0, fcmax = 185) {
 function mergeSegments(rides) {
   const groups = []
   const sorted = [...rides].sort((a, b) => new Date(a.iso) - new Date(b.iso))
-
   for (const ride of sorted) {
     const rideTime = new Date(ride.iso).getTime()
     const last = groups[groups.length - 1]
@@ -52,7 +49,7 @@ function mergeSegments(rides) {
 
 const DAYS_OLD_THRESHOLD = 14
 
-export default function Strava({ rides, addRide, isDuplicate, profile }) {
+export default function Strava({ rides, addRide, isDuplicate, profile, clearAllRides }) {
   const [stravaAuth, setStravaAuth] = useState(() => load('ri3_strava', null))
   const [syncing, setSyncing] = useState(false)
   const [result, setResult] = useState(null)
@@ -99,6 +96,13 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
     setResult({ type: 'info', msg: 'Pendientes limpiados.' })
   }
 
+  // Nuevo: Limpiar TODO el historial
+  function clearAllHistory() {
+    if (!confirm('¿Estás seguro? Esto borrará TODAS tus rodadas guardadas.')) return
+    clearAllRides()
+    setResult({ type: 'success', msg: 'Historial completo borrado. Ahora puedes sincronizar desde cero.' })
+  }
+
   async function sync() {
     if (!stravaAuth) return
     setSyncing(true)
@@ -143,11 +147,10 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
       setSenInputs(initSen)
       setPendingRides(newRides)
 
-      if (newRides.length === 0) {
-        setResult({ type: 'info', msg: 'No hay rodadas nuevas.' })
-      } else {
-        setResult({ type: 'success', msg: `${newRides.length} rodadas nuevas. La mayoría con RPE automático.` })
-      }
+      setResult({ 
+        type: 'success', 
+        msg: `${newRides.length} rodadas nuevas. La mayoría con RPE automático.` 
+      })
     } catch (e) {
       setResult({ type: 'error', msg: 'Error: ' + e.message })
     }
@@ -155,12 +158,7 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
   }
 
   function buildRide(ride) {
-    return {
-      ...ride,
-      rpe: rpeInputs[ride.stravaId],
-      sen: senInputs[ride.stravaId],
-      zp: [0,0,0,0,0] // puedes mejorar esto después
-    }
+    return { ...ride, rpe: rpeInputs[ride.stravaId], sen: senInputs[ride.stravaId] }
   }
 
   function saveOne(ride) {
@@ -180,27 +178,26 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
       await new Promise(res => setTimeout(res, 30))
     }
     setPendingRides([])
-    setResult({ type: 'success', msg: 'Todas las rodadas guardadas.' })
+    setResult({ type: 'success', msg: 'Todas las rodadas guardadas correctamente.' })
   }
 
   const RPE_LABELS = {1:'Muy fácil',2:'Fácil',3:'Fácil+',4:'Moderado-',5:'Moderado',6:'Moderado+',7:'Difícil',8:'Muy difícil',9:'Extremo',10:'Máximo'}
   const now = Date.now()
   const recentRides = pendingRides.filter(r => Math.round((now - new Date(r.iso).getTime()) / 86400000) < DAYS_OLD_THRESHOLD)
-  const oldRides = pendingRides.filter(r => Math.round((now - new Date(r.iso).getTime()) / 86400000) >= DAYS_OLD_THRESHOLD)
 
   return (
     <div className="page">
       <div className="ph">
         <h1>Sincronizar con <em>Strava</em></h1>
-        <p>Importa solo tus rodadas de bicicleta</p>
+        <p>Importa solo tus rodadas de bicicleta • RPE automático con FC + cadencia</p>
       </div>
 
-      <div className="card" style={{marginBottom:20}}>
+      <div className="card" style={{marginBottom:24}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <div>
             <div style={{display:'flex',alignItems:'center',gap:10}}>
-              <div style={{width:10,height:10,borderRadius:'50%',background:stravaAuth?'#6db86a':'#5c5a55'}} />
-              <span>{stravaAuth ? `Conectado · ${stravaAuth.athlete_name}` : 'No conectado'}</span>
+              <div style={{width:12,height:12,borderRadius:'50%',background:stravaAuth?'#4ade80':'#78716c'}} />
+              <span style={{fontWeight:600}}>{stravaAuth ? `Conectado · ${stravaAuth.athlete_name}` : 'No conectado'}</span>
             </div>
           </div>
           <div style={{display:'flex',gap:10}}>
@@ -211,89 +208,101 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
                 </button>
                 <button className="btn bs" onClick={disconnect}>Desconectar</button>
               </>
-            ) : (
+            ) : CLIENT_ID ? (
               <a href={STRAVA_URL} className="btn bp">Conectar con Strava</a>
-            )}
+            ) : null}
           </div>
         </div>
-        {result && <div className={`al ${result.type}`} style={{marginTop:12}}>{result.msg}</div>}
+
+        {result && <div className={`al ${result.type}`} style={{marginTop:16}}>{result.msg}</div>}
       </div>
+
+      {/* Botón peligroso: Limpiar todo el historial */}
+      {rides.length > 0 && (
+        <button 
+          className="btn bs" 
+          style={{marginBottom:24, width:'100%', background:'#ef4444', color:'white'}}
+          onClick={clearAllHistory}
+        >
+          🗑️ Limpiar TODO el historial y sincronizar desde cero
+        </button>
+      )}
 
       {pendingRides.length > 0 && (
         <>
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:16}}>
-            <div>{pendingRides.length} rodadas pendientes</div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+            <div><strong>{pendingRides.length}</strong> rodadas pendientes</div>
             <div>
-              <button className="btn bs" onClick={clearPending} style={{marginRight:8}}>Limpiar todo</button>
+              <button className="btn bs" onClick={clearPending} style={{marginRight:8}}>Limpiar pendientes</button>
               <button className="btn bp" onClick={saveAll}>Guardar todas</button>
             </div>
           </div>
 
-          {/* Rodadas recientes */}
-          {recentRides.length > 0 && (
-            <div>
-              <div style={{fontWeight:500,marginBottom:12}}>Rodadas recientes — agrega RPE y sensación</div>
-              {recentRides.map(ride => {
-                const sp = ride.dur > 0 ? (ride.dist / (ride.dur / 60)).toFixed(1) : '?'
-                return (
-                  <div key={ride.stravaId} className="hc" style={{marginBottom:16}}>
-                    <div className="hct">
-                      <div>
-                        <div className="hcn">{ride.name}</div>
-                        <div className="hcd">{ride.fecha} · hace {Math.round((now - new Date(ride.iso).getTime())/86400000)}d</div>
-                      </div>
-                      <span className="hcsi" style={{background:'#f59e0b',color:'#fff'}}>Pendiente RPE</span>
-                    </div>
-                    <div className="hcst">
-                      <span>{ride.dur} min</span>
-                      <span>{ride.dist} km</span>
-                      <span>{sp} km/h</span>
-                      {ride.hrAvg > 0 && <span>FC {ride.hrAvg}</span>}
-                      {ride.cadence > 0 && <span>Cad {ride.cadence}</span>}
-                    </div>
-
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginTop:12}}>
-                      <div>
-                        <label>RPE (Esfuerzo percibido)</label>
-                        <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:4}}>
-                          {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                            <button key={n} className={`rb ${rpeInputs[ride.stravaId] === n ? 'sel' : ''}`}
-                              onClick={() => setRpeInputs(p => ({...p, [ride.stravaId]: n}))}>
-                              {n}
-                            </button>
-                          ))}
-                        </div>
-                        <div style={{marginTop:4,fontSize:13}}>{rpeInputs[ride.stravaId] ? RPE_LABELS[rpeInputs[ride.stravaId]] : ''}</div>
-                      </div>
-                      <div>
-                        <label>Sensación posterior</label>
-                        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
-                          {['muy bien','bien','regular','cansado','muy cansado','con molestias'].map(s => (
-                            <button key={s} className={`sb2 ${senInputs[ride.stravaId] === s ? 'sel' : ''}`}
-                              onClick={() => setSenInputs(p => ({...p, [ride.stravaId]: s}))}>
-                              {s.charAt(0).toUpperCase() + s.slice(1)}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <button className="btn bp" style={{width:'100%',marginTop:12}} onClick={() => saveOne(ride)}>
-                      Guardar esta rodada
-                    </button>
+          {recentRides.map(ride => {
+            const speed = ride.dur > 0 ? (ride.dist / (ride.dur / 60)).toFixed(1) : '?'
+            return (
+              <div key={ride.stravaId} className="hc" style={{marginBottom:20}}>
+                <div className="hct">
+                  <div>
+                    <div className="hcn">{ride.name}</div>
+                    <div className="hcd">{ride.fecha} · hace {Math.round((now - new Date(ride.iso).getTime())/86400000)}d</div>
                   </div>
-                )
-              })}
-            </div>
-          )}
+                </div>
+
+                <div className="hcst" style={{marginBottom:16}}>
+                  <span>{ride.dur} min</span>
+                  <span>{ride.dist} km</span>
+                  <span>{speed} km/h</span>
+                  {ride.hrAvg > 0 && <span>FC {ride.hrAvg}</span>}
+                  {ride.cadence > 0 && <span>Cad {ride.cadence}</span>}
+                  {ride.eg > 0 && <span>+{ride.eg} m</span>}
+                </div>
+
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+                  <div>
+                    <label>RPE (Esfuerzo percibido)</label>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:6}}>
+                      {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                        <button 
+                          key={n} 
+                          className={`rb ${rpeInputs[ride.stravaId] === n ? 'sel' : ''}`}
+                          onClick={() => setRpeInputs(p => ({...p, [ride.stravaId]: n}))}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label>Sensación posterior</label>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                      {['muy bien','bien','regular','cansado','muy cansado','con molestias'].map(s => (
+                        <button 
+                          key={s} 
+                          className={`sb2 ${senInputs[ride.stravaId] === s ? 'sel' : ''}`}
+                          onClick={() => setSenInputs(p => ({...p, [ride.stravaId]: s}))}
+                        >
+                          {s.charAt(0).toUpperCase() + s.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <button className="btn bp" style={{width:'100%', marginTop:16}} onClick={() => saveOne(ride)}>
+                  Guardar esta rodada
+                </button>
+              </div>
+            )
+          })}
         </>
       )}
 
       <div className="card" style={{marginTop:30}}>
-        <strong>Cómo funciona ahora:</strong><br/>
+        <strong>Resumen actual:</strong><br/>
         • Solo rodadas de bicicleta<br/>
-        • RPE automático con frecuencia cardíaca + cadencia<br/>
-        • Solo últimas 2 semanas requieren tu input manual<br/>
-        • Botón "Limpiar todo" disponible
+        • RPE + zonas automáticas cuando hay FC<br/>
+        • Botón para limpiar todo el historial
       </div>
     </div>
   )
