@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { callIA, buildPlanPrompt, buildCompetitionPlan, calcFitness, interpretFitness, tssOf } from '../hooks/useIA'
+import { callIA, buildPlanPrompt, buildCompetitionPlan, calcFitness, interpretFitness, tssOf, extractJSON } from '../hooks/useIA'
 
 const IC = {Z1:'#6db86a',Z2:'#a8d5a2',Z3:'#e8c97a',Z4:'#e09850',Z5:'#e07070',alta:'#e09850',moderada:'#e8c97a',baja:'#a8d5a2',muy_alta:'#e07070'}
 
@@ -149,8 +149,9 @@ export default function Plan({ rides, supps, profile }) {
   async function genWeeklyPlan() {
     setLoading(true); setError(''); setPlan(null)
     const raw = await callIA(buildPlanPrompt(rides, supps, profile, context), 2000)
-    try { setPlan(JSON.parse(raw.replace(/```json|```/g,'').trim())) }
-    catch { setError('Error al parsear plan. IA respondió: ' + raw.slice(0,300)) }
+    const parsed = extractJSON(raw)
+    if (parsed) { setPlan(parsed) }
+    else { setError('La IA no devolvió un plan válido. Intenta de nuevo. Respuesta: ' + raw.slice(0,200)) }
     setLoading(false)
   }
 
@@ -158,9 +159,10 @@ export default function Plan({ rides, supps, profile }) {
     if (!compName || !compDate) return alert('Ingresa nombre y fecha de la competencia')
     setLoading(true); setError(''); setCompPlan(null)
     const comp = { name:compName, date:compDate, distance:compDist, type:compType, goal:compGoal }
-    const raw = await callIA(buildCompetitionPlan(rides, supps, profile, comp), 2400)
-    try { setCompPlan(JSON.parse(raw.replace(/```json|```/g,'').trim())) }
-    catch { setError('Error al parsear plan. IA respondió: ' + raw.slice(0,300)) }
+    const raw = await callIA(buildCompetitionPlan(rides, supps, profile, comp), 2000)
+    const parsed = extractJSON(raw)
+    if (parsed) { setCompPlan(parsed) }
+    else { setError('La IA no devolvió un plan válido. Intenta de nuevo. Respuesta: ' + raw.slice(0,200)) }
     setLoading(false)
   }
 
@@ -394,11 +396,11 @@ export default function Plan({ rides, supps, profile }) {
             </div>
           ))}
 
-          {compPlan.semana_proxima&&(
+          {compPlan.proxima_semana&&(
             <div style={{marginTop:20}}>
               <div className="stit" style={{marginBottom:12}}>Próxima semana (inicio del plan)</div>
-              <div style={{fontSize:13,color:'var(--text2)',marginBottom:12}}>{compPlan.semana_proxima.descripcion}</div>
-              {compPlan.semana_proxima.sesiones?.map((s,i)=>(
+              <div style={{fontSize:13,color:'var(--text2)',marginBottom:12}}>{compPlan.proxima_semana.descripcion}</div>
+              {compPlan.proxima_semana.sesiones?.map((s,i)=>(
                 <div key={i} className="pc" style={{padding:'14px 18px'}}>
                   <div className="pd">{s.dia}</div>
                   <div className="pt">{s.titulo}</div>
