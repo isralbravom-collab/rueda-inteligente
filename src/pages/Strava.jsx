@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react'
 function save(k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} }
 function load(k, d) { try { return JSON.parse(localStorage.getItem(k)) || d } catch { return d } }
 
+// RPE automático con FC + Cadencia
 function estimateRPE(hrAvg, cadence = 0, fcmax = 185) {
   if (!hrAvg || hrAvg < 40) return 5
   const pct = hrAvg / fcmax * 100
@@ -16,6 +17,7 @@ function estimateRPE(hrAvg, cadence = 0, fcmax = 185) {
   else if (pct < 92) rpe = 8
   else if (pct < 96) rpe = 9
   else rpe = 10
+
   if (cadence > 85) rpe = Math.min(10, rpe + 1)
   if (cadence > 95) rpe = Math.min(10, rpe + 1)
   return rpe
@@ -45,6 +47,18 @@ function mergeSegments(rides) {
     groups.push({ ...ride })
   }
   return groups
+}
+
+function calculateZones(hrAvg, fcmax = 185) {
+  if (!hrAvg || hrAvg < 50) return [0, 0, 0, 0, 0]
+  const zones = [0, 0, 0, 0, 0]
+  const pct = (hrAvg / fcmax) * 100
+  if (pct < 60) zones[0] = 100
+  else if (pct < 70) zones[1] = 100
+  else if (pct < 80) zones[2] = 100
+  else if (pct < 90) zones[3] = 100
+  else zones[4] = 100
+  return zones
 }
 
 const DAYS_OLD_THRESHOLD = 14
@@ -160,12 +174,14 @@ export default function Strava({ rides, addRide, isDuplicate, profile, clearAllR
     const dupe = isDuplicate(ride)
     if (dupe && !confirm(`Ya tienes una rodada similar el ${dupe.fecha}. ¿Guardar?`)) return
 
+    const zp = calculateZones(ride.hrAvg, profile.fcmax || 185)
+
     addRide({
       ...ride,
       id: ride.stravaId || Date.now().toString(),
       rpe: rpeInputs[ride.stravaId],
       sen: senInputs[ride.stravaId],
-      zp: calculateZones(ride.hrAvg, profile.fcmax || 185)
+      zp: zp
     })
 
     setPendingRides(prev => prev.filter(r => r.stravaId !== ride.stravaId))
@@ -176,29 +192,18 @@ export default function Strava({ rides, addRide, isDuplicate, profile, clearAllR
     if (missing.length > 0) return alert(`Falta RPE o sensación en ${missing.length} rodadas.`)
 
     for (const r of pendingRides) {
+      const zp = calculateZones(r.hrAvg, profile.fcmax || 185)
       addRide({
         ...r,
         id: r.stravaId || Date.now().toString(),
         rpe: rpeInputs[r.stravaId],
         sen: senInputs[r.stravaId],
-        zp: calculateZones(r.hrAvg, profile.fcmax || 185)
+        zp: zp
       })
       await new Promise(res => setTimeout(res, 30))
     }
     setPendingRides([])
-    setResult({ type: 'success', msg: 'Todas las rodadas guardadas.' })
-  }
-
-  function calculateZones(hrAvg, fcmax = 185) {
-    if (!hrAvg || hrAvg < 50) return [0, 0, 0, 0, 0]
-    const zones = [0, 0, 0, 0, 0]
-    const pct = (hrAvg / fcmax) * 100
-    if (pct < 60) zones[0] = 100
-    else if (pct < 70) zones[1] = 100
-    else if (pct < 80) zones[2] = 100
-    else if (pct < 90) zones[3] = 100
-    else zones[4] = 100
-    return zones
+    setResult({ type: 'success', msg: 'Todas las rodadas guardadas correctamente.' })
   }
 
   const now = Date.now()
@@ -206,11 +211,112 @@ export default function Strava({ rides, addRide, isDuplicate, profile, clearAllR
 
   return (
     <div className="page">
-      {/* ... tu JSX actual ... */}
-      {/* (mantén el mismo return que tenías antes) */}
+      <div className="ph">
+        <h1>Sincronizar con <em>Strava</em></h1>
+        <p>Importa solo rodadas de bicicleta • RPE automático</p>
+      </div>
+
+      <div className="card" style={{marginBottom:24}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <div style={{width:12,height:12,borderRadius:'50%',background:stravaAuth?'#4ade80':'#78716c'}} />
+              <span style={{fontWeight:600}}>{stravaAuth ? `Conectado · ${stravaAuth.athlete_name}` : 'No conectado'}</span>
+            </div>
+          </div>
+          <div>
+            {stravaAuth ? (
+              <>
+                <button className="btn bp" onClick={sync} disabled={syncing} style={{marginRight:8}}>
+                  {syncing ? 'Sincronizando...' : 'Sincronizar ahora'}
+                </button>
+                <button className="btn bs" onClick={disconnect}>Desconectar</button>
+              </>
+            ) : CLIENT_ID && <a href={STRAVA_URL} className="btn bp">Conectar con Strava</a>}
+          </div>
+        </div>
+        {result && <div className={`al ${result.type}`} style={{marginTop:16}}>{result.msg}</div>}
+      </div>
+
+      {rides.length > 0 && (
+        <button 
+          onClick={clearAllHistory}
+          className="btn bs"
+          style={{width:'100%', marginBottom:24, background:'#ef4444', color:'white'}}
+        >
+          🗑️ Limpiar TODO el historial
+        </button>
+      )}
+
+      {pendingRides.length > 0 && (
+        <>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:16}}>
+            <div><strong>{pendingRides.length}</strong> rodadas pendientes</div>
+            <div>
+              <button className="btn bs" onClick={clearPending} style={{marginRight:8}}>Limpiar pendientes</button>
+              <button className="btn bp" onClick={saveAll}>Guardar todas</button>
+            </div>
+          </div>
+
+          {recentRides.map(ride => {
+            const speed = ride.dur > 0 ? (ride.dist / (ride.dur / 60)).toFixed(1) : '?'
+            return (
+              <div key={ride.stravaId} className="hc" style={{marginBottom:20}}>
+                <div className="hct">
+                  <div>
+                    <div className="hcn">{ride.name}</div>
+                    <div className="hcd">{ride.fecha}</div>
+                  </div>
+                </div>
+
+                <div className="hcst" style={{marginBottom:16}}>
+                  <span>{ride.dur} min</span>
+                  <span>{ride.dist} km</span>
+                  <span>{speed} km/h</span>
+                  {ride.hrAvg > 0 && <span>FC <strong>{ride.hrAvg}</strong> lpm</span>}
+                  {ride.cadence > 0 && <span>Cad <strong>{ride.cadence}</strong></span>}
+                  {ride.eg > 0 && <span>+{ride.eg} m</span>}
+                </div>
+
+                <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:16}}>
+                  <div>
+                    <label>RPE (Esfuerzo percibido)</label>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:6}}>
+                      {[1,2,3,4,5,6,7,8,9,10].map(n => (
+                        <button 
+                          key={n} 
+                          className={`rb ${rpeInputs[ride.stravaId] === n ? 'sel' : ''}`}
+                          onClick={() => setRpeInputs(p => ({...p, [ride.stravaId]: n}))}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label>Sensación posterior</label>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                      {['muy bien','bien','regular','cansado','muy cansado','con molestias'].map(s => (
+                        <button 
+                          key={s} 
+                          className={`sb2 ${senInputs[ride.stravaId] === s ? 'sel' : ''}`}
+                          onClick={() => setSenInputs(p => ({...p, [ride.stravaId]: s}))}
+                        >
+                          {s.charAt(0).toUpperCase() + s.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <button className="btn bp" style={{width:'100%',marginTop:16}} onClick={() => saveOne(ride)}>
+                  Guardar esta rodada
+                </button>
+              </div>
+            )
+          })}
+        </>
+      )}
     </div>
   )
 }
-
-// ←←← ESTA LÍNEA ES LA QUE FALTABA
-export default Strava
