@@ -1,7 +1,4 @@
-'use client';
-
 import { useState } from 'react';
-import Link from 'next/link';
 
 export default function StravaPage() {
   const [isConnected, setIsConnected] = useState(false);
@@ -42,42 +39,49 @@ export default function StravaPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#0a0a0a', color: '#f1f1f1', padding: '40px 20px' }}>
-      <Link href="/" style={{ color: '#10b981', marginBottom: '30px', display: 'inline-block' }}>← Volver</Link>
+    <div style={{ minHeight: '100vh', backgroundColor: '#0a0a0a', color: '#f1f1f1', padding: '40px 20px', fontFamily: 'system-ui, sans-serif' }}>
+      <a href="/" style={{ color: '#10b981', textDecoration: 'none', marginBottom: '30px', display: 'inline-block' }}>← Volver</a>
 
-      <h1 style={{ fontSize: '42px' }}>Sincronizar con Strava</h1>
+      <h1 style={{ fontSize: '42px', marginBottom: '10px' }}>Sincronizar con Strava</h1>
       <p style={{ color: '#aaa' }}>Importa solo rodadas de bicicleta</p>
 
-      <div style={{ background: '#18181b', padding: '40px', borderRadius: '16px', maxWidth: '700px', marginTop: '30px' }}>
+      <div style={{ background: '#18181b', padding: '40px', borderRadius: '16px', maxWidth: '700px', marginTop: '40px' }}>
         {!isConnected ? (
           <button 
             onClick={handleConnect}
-            style={{ padding: '14px 40px', background: '#10b981', color: 'white', border: 'none', borderRadius: '12px', fontSize: '17px' }}
+            style={{ padding: '14px 40px', background: '#10b981', color: 'white', border: 'none', borderRadius: '12px', fontSize: '17px', cursor: 'pointer' }}
           >
             Conectar con Strava
           </button>
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <div>✅ Conectado • Israel</div>
+              <div style={{ fontSize: '18px' }}>✅ Conectado • Israel</div>
               <div style={{ display: 'flex', gap: '12px' }}>
                 <button 
                   onClick={handleSync} 
                   disabled={isSyncing}
-                  style={{ padding: '12px 28px', background: isSyncing ? '#555' : '#10b981', color: 'white', border: 'none', borderRadius: '12px' }}
+                  style={{ 
+                    padding: '12px 28px', 
+                    background: isSyncing ? '#555' : '#10b981', 
+                    color: 'white', 
+                    border: 'none', 
+                    borderRadius: '12px',
+                    cursor: isSyncing ? 'not-allowed' : 'pointer'
+                  }}
                 >
                   {isSyncing ? 'Sincronizando...' : 'Sincronizar ahora'}
                 </button>
                 <button 
                   onClick={() => setIsConnected(false)}
-                  style={{ padding: '12px 24px', background: '#444', color: 'white', border: 'none', borderRadius: '12px' }}
+                  style={{ padding: '12px 24px', background: '#444', color: 'white', border: 'none', borderRadius: '12px', cursor: 'pointer' }}
                 >
                   Desconectar
                 </button>
               </div>
             </div>
 
-            {syncMessage && <p style={{ marginTop: '20px', color: '#10b981' }}>{syncMessage}</p>}
+            {syncMessage && <p style={{ marginTop: '20px', color: '#10b981', fontSize: '16px' }}>{syncMessage}</p>}
           </>
         )}
       </div>
