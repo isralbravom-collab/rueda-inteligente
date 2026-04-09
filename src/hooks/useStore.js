@@ -20,21 +20,55 @@ export function useStore() {
   useEffect(() => { localStorage.setItem(KEYS.supps,   JSON.stringify(supps))   }, [supps])
   useEffect(() => { localStorage.setItem(KEYS.profile, JSON.stringify(profile)) }, [profile])
 
-  function addRide(ride)       { setRides(prev => sortByDate([ride, ...prev])) }
-  function deleteRide(id)      { setRides(prev => prev.filter(r => r.id !== id)) }
-  function clearAllRides()     { setRides([]); localStorage.removeItem(KEYS.rides) }
-  function addSupp(supp)       { setSupps(prev => [...prev, { ...supp, id: Date.now() }]) }
-  function deleteSupp(id)      { setSupps(prev => prev.filter(s => s.id !== id)) }
-  function saveProfile(data)   { setProfile(data) }
+  function addRide(ride) {
+    // Usamos stravaId como identificador principal si existe, sino generamos uno
+    const rideWithId = {
+      ...ride,
+      id: ride.stravaId || Date.now().toString()
+    }
+    setRides(prev => sortByDate([rideWithId, ...prev]))
+  }
+
+  function deleteRide(id) {
+    setRides(prev => prev.filter(r => (r.stravaId || r.id) !== id))
+  }
+
+  function clearAllRides() {
+    setRides([])
+    localStorage.removeItem(KEYS.rides)
+  }
+
+  function addSupp(supp) {
+    setSupps(prev => [...prev, { ...supp, id: Date.now() }])
+  }
+
+  function deleteSupp(id) {
+    setSupps(prev => prev.filter(s => s.id !== id))
+  }
+
+  function saveProfile(data) {
+    setProfile(data)
+  }
 
   function isDuplicate(newRide) {
     const newTime = new Date(newRide.iso).getTime()
     return rides.find(r => {
-      const diff    = Math.abs(new Date(r.iso).getTime() - newTime)
+      const diff = Math.abs(new Date(r.iso).getTime() - newTime)
       const durDiff = Math.abs((r.dur || 0) - (newRide.dur || 0))
       return diff < 30 * 60 * 1000 && durDiff < 10
     })
   }
 
-  return { rides, supps, profile, addRide, deleteRide, clearAllRides, addSupp, deleteSupp, saveProfile, isDuplicate }
+  return {
+    rides,
+    supps,
+    profile,
+    addRide,
+    deleteRide,
+    clearAllRides,
+    addSupp,
+    deleteSupp,
+    saveProfile,
+    isDuplicate
+  }
 }
