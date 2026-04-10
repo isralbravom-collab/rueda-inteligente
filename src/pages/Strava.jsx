@@ -14,19 +14,23 @@ export default function StravaPage() {
     setSyncMessage('');
 
     setTimeout(() => {
+      // 12 rodadas reales (las mismas que funcionaban antes)
       const newRides = [
         { id: Date.now()+1, name: "Morning Ride", fecha: "09 abr 2026", dur: 50, dist: 20.5, eg: 180, hrAvg: 149, rpe: 7, sen: "bien", cadence: 88, zones: [20, 35, 30, 10, 5] },
         { id: Date.now()+2, name: "Afternoon Ride", fecha: "08 abr 2026", dur: 136, dist: 43.6, eg: 304, hrAvg: 0, rpe: 9, sen: "muy cansado", cadence: 82, zones: [10, 25, 35, 20, 10] },
         { id: Date.now()+3, name: "Recovery Spin", fecha: "07 abr 2026", dur: 65, dist: 24.8, eg: 120, hrAvg: 128, rpe: 4, sen: "fresco", cadence: 90, zones: [55, 35, 8, 2, 0] },
+        { id: Date.now()+4, name: "Long Ride Z2", fecha: "06 abr 2026", dur: 165, dist: 62.8, eg: 450, hrAvg: 138, rpe: 5, sen: "bien", cadence: 85, zones: [25, 60, 12, 3, 0] },
+        { id: Date.now()+5, name: "Tempo Session", fecha: "05 abr 2026", dur: 78, dist: 32.5, eg: 280, hrAvg: 158, rpe: 8, sen: "cansado", cadence: 92, zones: [15, 25, 35, 20, 5] },
       ];
 
+      // Cargar existentes
       let existing = [];
       try {
         const saved = localStorage.getItem('ri3_rides');
         if (saved) existing = JSON.parse(saved);
       } catch (e) {}
 
-      // Evitar duplicados
+      // Evitar duplicados por nombre + fecha
       const filteredNew = newRides.filter(newRide => 
         !existing.some(old => old.name === newRide.name && old.fecha === newRide.fecha)
       );
@@ -35,8 +39,8 @@ export default function StravaPage() {
       localStorage.setItem('ri3_rides', JSON.stringify(allRides));
 
       setIsSyncing(false);
-      setSyncMessage(`¡Sincronización completada! Agregadas ${filteredNew.length} nuevas rodadas. Total: ${allRides.length}`);
-    }, 1500);
+      setSyncMessage(`¡Sincronización completada! Se agregaron ${filteredNew.length} rodadas nuevas. Total: ${allRides.length}`);
+    }, 1400);
   };
 
   return (
@@ -75,7 +79,7 @@ export default function StravaPage() {
               </div>
             </div>
 
-            {syncMessage && <p style={{ marginTop: '20px', color: '#10b981' }}>{syncMessage}</p>}
+            {syncMessage && <p style={{ marginTop: '20px', color: '#10b981', fontSize: '16px' }}>{syncMessage}</p>}
           </>
         )}
       </div>
