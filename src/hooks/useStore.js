@@ -16,7 +16,13 @@ const DEFAULT_PROFILE = {
 }
 
 function load(key, def) {
-  try { return { ...def, ...JSON.parse(localStorage.getItem(key)) } } catch { return def }
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key))
+    if (parsed === null || parsed === undefined) return def
+    // Arrays (rides, supps) returned as-is; objects merged with defaults
+    if (Array.isArray(def)) return Array.isArray(parsed) ? parsed : def
+    return { ...def, ...parsed }
+  } catch { return def }
 }
 
 function sortByDate(rides) {
