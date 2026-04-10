@@ -159,7 +159,7 @@ export default function Historial({ rides, deleteRide, profile={} }) {
           : estimateCadPct(cad)
 
         // Cadence message — only show when genuinely low
-        const showCadWarning = hasCad && cadPct !== null && cadPct < 50 && cad < 78
+        const showCadWarning = hasCad && cadPct !== null && cadPct < 65
 
         return (
           <div key={r.id} className="hc" style={{padding:0,overflow:'hidden'}}>
@@ -218,8 +218,11 @@ export default function Historial({ rides, deleteRide, profile={} }) {
               <div style={{padding:'0 18px 14px'}}>
                 <CadZones cadAvg={cad} cadPct={cadPct}/>
                 {showCadWarning && (
-                  <div style={{fontSize:11,color:'#e09850',marginTop:6,fontStyle:'italic'}}>
-                    Cadencia predominantemente por debajo del rango óptimo — incluir series de cadencia alta en Z2
+                  <div style={{fontSize:11,color: cadPct < 35 ? '#e07070' : '#e09850', marginTop:6}}>
+                    {cadPct < 35
+                      ? `⚠ Solo ${cadPct}% del tiempo en rango óptimo (80-100rpm) — cadencia baja afecta la eficiencia muscular. Priorizar series de cadencia 85-95rpm en Z2.`
+                      : `${cadPct}% del tiempo en rango óptimo (80-100rpm) — hay margen para mejorar. Incluir algunos bloques de cadencia alta en Z2.`
+                    }
                   </div>
                 )}
               </div>
