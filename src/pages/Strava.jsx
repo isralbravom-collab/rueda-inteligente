@@ -10,21 +10,21 @@ export default function StravaPage() {
   };
 
   const handleSync = () => {
-    if (isSyncing) return; // evita doble clic
+    if (isSyncing) return;
 
     setIsSyncing(true);
     setSyncMessage('');
 
     setTimeout(() => {
-      // 12 rodadas (la cantidad que querías)
+      // Rodadas más realistas con fechas variadas (no todas seguidas)
       const newRides = [
-        { id: 101, name: "Morning Ride", fecha: "09 abr 2026", dur: 50, dist: 20.5, eg: 180, hrAvg: 149, rpe: 7, sen: "bien", cadence: 88, zones: [20, 35, 30, 10, 5] },
-        { id: 102, name: "Afternoon Ride", fecha: "08 abr 2026", dur: 136, dist: 43.6, eg: 304, hrAvg: 0, rpe: 9, sen: "muy cansado", cadence: 82, zones: [10, 25, 35, 20, 10] },
-        { id: 103, name: "Recovery Spin", fecha: "07 abr 2026", dur: 65, dist: 24.8, eg: 120, hrAvg: 128, rpe: 4, sen: "fresco", cadence: 90, zones: [55, 35, 8, 2, 0] },
-        { id: 104, name: "Long Ride Z2", fecha: "06 abr 2026", dur: 165, dist: 62.8, eg: 450, hrAvg: 138, rpe: 5, sen: "bien", cadence: 85, zones: [25, 60, 12, 3, 0] },
-        { id: 105, name: "Tempo Session", fecha: "05 abr 2026", dur: 78, dist: 32.5, eg: 280, hrAvg: 158, rpe: 8, sen: "cansado", cadence: 92, zones: [15, 25, 35, 20, 5] },
-        { id: 106, name: "Evening Easy", fecha: "04 abr 2026", dur: 55, dist: 22.1, eg: 95, hrAvg: 131, rpe: 5, sen: "bien", cadence: 87, zones: [30, 50, 15, 5, 0] },
-        { id: 107, name: "Hill Repeats", fecha: "03 abr 2026", dur: 105, dist: 29.8, eg: 680, hrAvg: 162, rpe: 9, sen: "muy cansado", cadence: 78, zones: [8, 18, 22, 32, 20] },
+        { id: Date.now() + 1, name: "Morning Ride", fecha: "09 abr 2026", dur: 52, dist: 21.8, eg: 195, hrAvg: 152, rpe: 7, sen: "bien", cadence: 89, zones: [18, 38, 32, 9, 3] },
+        { id: Date.now() + 2, name: "Afternoon Ride", fecha: "08 abr 2026", dur: 128, dist: 41.2, eg: 315, hrAvg: 0, rpe: 8, sen: "cansado", cadence: 84, zones: [12, 28, 35, 18, 7] },
+        { id: Date.now() + 3, name: "Recovery Spin", fecha: "06 abr 2026", dur: 68, dist: 26.4, eg: 135, hrAvg: 132, rpe: 4, sen: "fresco", cadence: 91, zones: [52, 38, 8, 2, 0] },
+        { id: Date.now() + 4, name: "Weekend Long Ride", fecha: "05 abr 2026", dur: 182, dist: 68.5, eg: 480, hrAvg: 140, rpe: 6, sen: "bien", cadence: 86, zones: [22, 58, 15, 4, 1] },
+        { id: Date.now() + 5, name: "Tempo Intervals", fecha: "03 abr 2026", dur: 75, dist: 29.7, eg: 265, hrAvg: 157, rpe: 8, sen: "duro", cadence: 93, zones: [14, 24, 36, 21, 5] },
+        { id: Date.now() + 6, name: "Easy Evening", fecha: "02 abr 2026", dur: 48, dist: 19.5, eg: 90, hrAvg: 135, rpe: 5, sen: "bien", cadence: 88, zones: [35, 48, 14, 3, 0] },
+        { id: Date.now() + 7, name: "Hill Training", fecha: "31 mar 2026", dur: 98, dist: 27.9, eg: 650, hrAvg: 161, rpe: 9, sen: "muy cansado", cadence: 79, zones: [10, 20, 25, 30, 15] },
       ];
 
       let existing = [];
@@ -33,18 +33,17 @@ export default function StravaPage() {
         if (saved) existing = JSON.parse(saved);
       } catch (e) {}
 
-      // Evitar duplicados básicos
+      // Evitar duplicados por nombre + fecha
       const filteredNew = newRides.filter(newRide => 
         !existing.some(old => old.name === newRide.name && old.fecha === newRide.fecha)
       );
 
       const allRides = [...existing, ...filteredNew];
-
       localStorage.setItem('ri3_rides', JSON.stringify(allRides));
 
       setIsSyncing(false);
-      setSyncMessage(`¡Sincronización completada! Se importaron ${filteredNew.length} rodadas nuevas. Total ahora: ${allRides.length}`);
-    }, 1400);
+      setSyncMessage(`¡Sincronización completada! Se importaron ${filteredNew.length} rodadas nuevas. Total: ${allRides.length}`);
+    }, 1600);
   };
 
   return (
