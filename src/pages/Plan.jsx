@@ -123,6 +123,7 @@ export default function Plan({ rides, supps, profile }) {
   const [compPlan, setCompPlan]       = useState(null)
   const [loading, setLoading]         = useState(false)
   const [context, setContext]         = useState('')
+  const [diasSemana, setDiasSemana]   = useState(profile.dias || 3)
   const [error, setError]             = useState('')
 
   // Competition fields
@@ -148,7 +149,8 @@ export default function Plan({ rides, supps, profile }) {
 
   async function genWeeklyPlan() {
     setLoading(true); setError(''); setPlan(null)
-    const raw = await callIA(buildPlanPrompt(rides, supps, profile, context), 2000)
+    const profileWithDias = { ...profile, dias: diasSemana }
+    const raw = await callIA(buildPlanPrompt(rides, supps, profileWithDias, context), 2000)
     const parsed = extractJSON(raw)
     if (parsed) { setPlan(parsed) }
     else { setError('La IA no devolvió un plan válido. Intenta de nuevo. Respuesta: ' + raw.slice(0,200)) }
@@ -246,13 +248,47 @@ export default function Plan({ rides, supps, profile }) {
         <div className="card">
           {planMode === 'weekly' ? (
             <>
-              <div className="stit" style={{marginBottom:12}}>Contexto para esta semana</div>
+              <div className="stit" style={{marginBottom:12}}>Esta semana</div>
+
+              {/* Días disponibles — selector prominente */}
+              <div style={{marginBottom:16}}>
+                <div style={{fontSize:12,color:'var(--text2)',marginBottom:8}}>
+                  ¿Cuántos días puedes entrenar <strong style={{color:'var(--text)'}}>esta semana</strong>?
+                </div>
+                <div style={{display:'flex',gap:8}}>
+                  {[2,3,4,5,6].map(n => (
+                    <button key={n} onClick={()=>setDiasSemana(n)}
+                      style={{
+                        flex:1, padding:'10px 0', borderRadius:'var(--r)', cursor:'pointer',
+                        fontSize:16, fontWeight:500,
+                        border: diasSemana===n ? '2px solid var(--green2)' : '1px solid var(--border)',
+                        background: diasSemana===n ? 'rgba(109,184,106,0.15)' : 'var(--bg4)',
+                        color: diasSemana===n ? 'var(--green2)' : 'var(--text2)',
+                        transition:'all .15s'
+                      }}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                <div style={{fontSize:11,color:'var(--text3)',marginTop:6,textAlign:'center'}}>
+                  {diasSemana === 2 && 'Ideal para semana de recuperación o semana muy ocupada'}
+                  {diasSemana === 3 && 'Lo mínimo recomendado para progresión continua'}
+                  {diasSemana === 4 && 'Buena frecuencia — permite polarización 80/20 correcta'}
+                  {diasSemana === 5 && 'Alta frecuencia — incluye sesión de recuperación activa'}
+                  {diasSemana === 6 && 'Carga alta — el plan incluirá una sesión muy suave obligatoria'}
+                </div>
+              </div>
+
+              {/* Semana a planificar */}
               <div style={{background:'var(--bg4)',borderRadius:'var(--r)',padding:'8px 12px',marginBottom:12,fontSize:12,color:'var(--text2)'}}>
                 El plan cubrirá: <NextWeekRange/>
               </div>
+
+              {/* Contexto libre */}
               <textarea value={context} onChange={e=>setContext(e.target.value)}
-                placeholder="Ej: 'Esta semana tengo rodada grupal el sábado', 'me duele la rodilla', 'solo tengo 45 min por sesión', 'quiero enfatizar resistencia'..."
-                style={{minHeight:110,marginBottom:10}}/>
+                placeholder="Algo más que deba saber la IA: 'tengo rodada grupal el sábado', 'me duele la rodilla', 'máx 45 min por sesión'..."
+                style={{minHeight:80,marginBottom:10}}/>
+
               <div style={{fontSize:11,color:'var(--text3)',marginBottom:12,fontStyle:'italic'}}>
                 Polarización actual: <strong style={{color:'var(--text)'}}>{fit.zAvg[0]+fit.zAvg[1]}%</strong> baja / <strong style={{color:'var(--text)'}}>{fit.zAvg[3]+fit.zAvg[4]}%</strong> alta · ideal 80/20
               </div>
