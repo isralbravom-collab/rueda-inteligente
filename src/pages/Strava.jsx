@@ -26,6 +26,7 @@ export default function StravaPage() {
         if (saved) existing = JSON.parse(saved);
       } catch (e) {}
 
+      // Evitar duplicados
       const filteredNew = newRides.filter(newRide => 
         !existing.some(old => old.name === newRide.name && old.fecha === newRide.fecha)
       );
@@ -34,13 +35,13 @@ export default function StravaPage() {
       localStorage.setItem('ri3_rides', JSON.stringify(allRides));
 
       setIsSyncing(false);
-      setSyncMessage(`¡Sincronización completada! Agregadas ${filteredNew.length} nuevas. Total: ${allRides.length}`);
+      setSyncMessage(`¡Sincronización completada! Agregadas ${filteredNew.length} nuevas rodadas. Total: ${allRides.length}`);
     }, 1500);
   };
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: '#0a0a0a', color: '#f1f1f1', padding: '40px 20px', fontFamily: 'system-ui, sans-serif' }}>
-      <a href="/" style={{ color: '#10b981', textDecoration: 'none', marginBottom: '30px', display: 'inline-block' }}>← Volver</a>
+      <a href="/" style={{ color: '#10b981', marginBottom: '30px', display: 'inline-block' }}>← Volver</a>
 
       <h1 style={{ fontSize: '42px', marginBottom: '10px' }}>Sincronizar con Strava</h1>
       <p style={{ color: '#aaa' }}>Importa solo rodadas de bicicleta</p>
@@ -61,14 +62,7 @@ export default function StravaPage() {
                 <button 
                   onClick={handleSync} 
                   disabled={isSyncing}
-                  style={{ 
-                    padding: '12px 28px', 
-                    background: isSyncing ? '#555' : '#10b981', 
-                    color: 'white', 
-                    border: 'none', 
-                    borderRadius: '12px',
-                    cursor: isSyncing ? 'not-allowed' : 'pointer'
-                  }}
+                  style={{ padding: '12px 28px', background: isSyncing ? '#555' : '#10b981', color: 'white', border: 'none', borderRadius: '12px', cursor: isSyncing ? 'not-allowed' : 'pointer' }}
                 >
                   {isSyncing ? 'Sincronizando...' : 'Sincronizar ahora'}
                 </button>
@@ -81,7 +75,7 @@ export default function StravaPage() {
               </div>
             </div>
 
-            {syncMessage && <p style={{ marginTop: '20px', color: '#10b981', fontSize: '16px' }}>{syncMessage}</p>}
+            {syncMessage && <p style={{ marginTop: '20px', color: '#10b981' }}>{syncMessage}</p>}
           </>
         )}
       </div>
