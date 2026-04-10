@@ -302,33 +302,11 @@ Días de entreno disponibles: ${profile.dias||3}
    - ALTITUD: ${altitud>2000?'sumar +15% agua por aire más seco y respiración acelerada':'sin ajuste'}
    Expresar hidratación en ml Y en "cada cuántos km" basado en velocidad promedio histórica de ${Math.round(fit.avgWeekTSS>0?(rides.slice(0,10).reduce((a,r)=>a+(r.speed||(r.dur>0?(r.dist||0)/(r.dur/60):0)),0)/Math.min(10,rides.length)):20)}km/h del atleta.
 
-Responde SOLO con JSON válido (sin texto antes ni después):
-{"sesiones":[{
-  "dia":"${weekDays[0]}",
-  "titulo":"Título motivador en lenguaje simple",
-  "tipo":"rodaje suave|rodaje continuo|intervalos|salida larga|recuperación activa",
-  "descripcion":"CALENTAMIENTO: X min pedaleando suave, sin fuerza. PARTE PRINCIPAL: [instrucciones concretas en lenguaje simple, con referencias a sensaciones no solo a números]. VUELTA A LA CALMA: X min muy suave.",
-  "duracion_min":60,
-  "zona_principal":"Z1|Z2|Z3|Z4|Z5",
-  "lenguaje_simple":"Frase de 1 línea que cualquier ciclista entiende. Ej: 'Rueda cómodo, puedes mantener una conversación'",
-  "fc_objetivo":"${Math.round((profile.fcmax||185)*.65)}-${Math.round((profile.fcmax||185)*.75)} lpm",
-  ${tienePow?`"watts_objetivo":"${Math.round(ftpEst*.6)}-${Math.round(ftpEst*.75)}W",`:''}
-  "cadencia_objetivo":"85-95 rpm — pedaleo redondo y suave",
-  "rpe_objetivo":5,
-  "tss_estimado":40,
-  "por_que_hoy":"Razón concreta basada en TSB=${fit.tsb} y el historial de este atleta",
-  "hidratacion_nutricion":{
-    "llevar":"Ej: 800ml agua + 1 botella con electrolito",
-    "protocolo":"Ej: Sorbo cada 10min (cada 3-4km a tu ritmo). A los 45min: 1 plátano.",
-    "nota_clima":"${clima.includes('tropical')||clima.includes('caluroso')?'Rodar temprano por el calor. Añade sal extra al agua.':altitud>2000?'Bebe aunque no tengas sed — el aire seco engaña.':''}"
-  },
-  "suplementacion":{"pre":"...","durante":"...","post":"..."},
-  "razon_cientifica":"Referencia específica (autor año)"
-}],
-"diagnostico_semana":"Análisis en 2-3 oraciones del estado de forma y por qué el plan está así estructurado. En lenguaje simple.",
-"consejo_semana":"Un consejo práctico y específico para este atleta esta semana — no genérico.",
-"tss_semana_total":0,
-"referencias":"Foster 2001, Seiler 2010, Bompa 2018"}`
+CRÍTICO: genera EXACTAMENTE ${profile.dias||3} sesiones en el array. Una por cada día disponible.
+Días a usar: ${weekDays.slice(0, profile.dias||3).join(' · ')}
+
+Responde SOLO con JSON (sin texto antes ni después, sin markdown):
+{"sesiones":[{"dia":"${weekDays[0]}","titulo":"...","tipo":"rodaje suave","descripcion":"CALENTAMIENTO: 10min suave. PRINCIPAL: descripción concreta. VUELTA CALMA: 5min.","duracion_min":60,"zona_principal":"Z2","lenguaje_simple":"Frase simple de 1 línea para cualquier ciclista","fc_objetivo":"${Math.round((profile.fcmax||185)*.65)}-${Math.round((profile.fcmax||185)*.75)} lpm","cadencia_objetivo":"85-95 rpm pedaleo suave","rpe_objetivo":5,"tss_estimado":40,"por_que_hoy":"Razón específica para este atleta","hidratacion_nutricion":{"llevar":"Xml agua...","protocolo":"Sorbo cada Xmin (cada Xkm a tu ritmo)","nota_clima":"${clima.includes('tropical')||clima.includes('caluroso')?'Rodar temprano. Añade sal al agua.':altitud>2000?'Bebe aunque no tengas sed.':''}"},"suplementacion":{"pre":"...","durante":"...","post":"..."},"razon_cientifica":"Autor año"},{"dia":"${weekDays[1] || weekDays[0]}","titulo":"...","tipo":"...","descripcion":"...","duracion_min":60,"zona_principal":"Z2","lenguaje_simple":"...","fc_objetivo":"...","cadencia_objetivo":"85-95 rpm","rpe_objetivo":5,"tss_estimado":40,"por_que_hoy":"...","hidratacion_nutricion":{"llevar":"...","protocolo":"...","nota_clima":""},"suplementacion":{"pre":"...","durante":"...","post":"..."},"razon_cientifica":"..."},{"dia":"${weekDays[2] || weekDays[1] || weekDays[0]}","titulo":"...","tipo":"...","descripcion":"...","duracion_min":60,"zona_principal":"Z3","lenguaje_simple":"...","fc_objetivo":"...","cadencia_objetivo":"85-95 rpm","rpe_objetivo":6,"tss_estimado":50,"por_que_hoy":"...","hidratacion_nutricion":{"llevar":"...","protocolo":"...","nota_clima":""},"suplementacion":{"pre":"...","durante":"...","post":"..."},"razon_cientifica":"..."}],"diagnostico_semana":"2-3 oraciones sobre el estado de forma en lenguaje simple.","consejo_semana":"Consejo concreto y específico para esta semana.","tss_semana_total":130,"referencias":"Foster 2001, Seiler 2010, Bompa 2018"}\`
 }
 
 
