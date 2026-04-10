@@ -96,8 +96,9 @@ function CadenceChart({ labels, cads, height=180 }) {
           borderColor:'#e8c97a',
           backgroundColor:'transparent',
           tension:0.3,
-          pointRadius:3,
-          pointBackgroundColor: cads.map(c => c>=80&&c<=100?'#6db86a':'#e8c97a'),
+          pointRadius: cads.map(c => c !== null ? 4 : 0),
+          pointBackgroundColor: cads.map(c => c !== null && c>=80&&c<=100?'#6db86a':'#e8c97a'),
+          spanGaps: true,
           label:'Cadencia'
         }]
       },
@@ -193,12 +194,27 @@ export default function Graficas({ rides }) {
   })
 
   // HR
-  const hrs  = last.map(r => getHR(r))
-  const hasHR = hrs.some(h => h > 0)
+  const hrsRaw = last.map(r => getHR(r))
+  const hasHR  = hrsRaw.some(h => h > 0)
+  // Replace 0 FC with null so Chart.js skips those points (no distortion)
+  const hrs    = hrsRaw.map(h => h > 0 ? h : null)
 
   // Cadence — dual field support
-  const cads   = last.map(r => getCad(r))
-  const hasCad = cads.some(c => c > 0)
+  const cadsRaw = last.map(r => getCad(r))
+  const hasCad  = cadsRaw.some(c => c > 0)
+  const cads    = cadsRaw.map(c => c > 0 ? c : null)
+
+  // Estimate cadPctOptimal for rides that only have avg cadence
+  function estimateCadPct(cadAvg) {
+    if (!cadAvg || cadAvg < 20) return 0
+    const std = 12
+    function erf(x) { const a=0.147,s=x<0?-1:1,x2=x*x; return s*Math.sqrt(1-Math.exp(-x2*(4/Math.PI+a*x2)/(1+a*x2))) }
+    function ncdf(x) { return 0.5*(1+erf((x-cadAvg)/(std*Math.SQRT2))) }
+    return Math.round(Math.max(0,Math.min(100,(ncdf(100)-ncdf(80))*100)))
+  }
+  const ridesWithCadPct = rides.filter(r => getCad(r) > 0).map(r => ({
+    ...r, cadPctOptimal: r.cadPctOptimal > 0 ? r.cadPctOptimal : estimateCadPct(getCad(r))
+  }))
 
   // RPE & zones
   const rpes = last.map(r => r.rpe || 0)
