@@ -338,29 +338,49 @@ export default function Plan({ rides, supps, profile }) {
                 </div>
               </div>
               <div className="pt">{s.titulo}</div>
+              {s.lenguaje_simple && <div style={{fontSize:14,color:'var(--text)',margin:'6px 0',padding:'8px 12px',background:'var(--bg4)',borderRadius:'var(--r)',borderLeft:'3px solid var(--green2)'}}>"{s.lenguaje_simple}"</div>}
               {s.por_que_hoy&&<div style={{fontSize:12,color:'var(--green2)',margin:'5px 0 8px',fontStyle:'italic'}}>↳ {s.por_que_hoy}</div>}
               <div className="pdesc">{s.descripcion}</div>
               <div className="pm" style={{marginBottom:10}}>
                 <span className="pmi">Duración: <strong>{s.duracion_min}min</strong></span>
                 <span className="pmi">RPE objetivo: <strong>{s.rpe_objetivo}/10</strong></span>
                 <span className="pmi">Tipo: <strong>{s.tipo}</strong></span>
+                  {s.fc_objetivo && <span className="pmi">FC: <strong>{s.fc_objetivo}</strong></span>}
+                  {s.watts_objetivo && <span className="pmi">Potencia: <strong>{s.watts_objetivo}</strong></span>}
+                  {s.cadencia_objetivo && <span className="pmi" style={{color:'var(--text3)',fontSize:11}}>🔄 {s.cadencia_objetivo}</span>}
               </div>
-              {s.suplementacion_dia&&Object.values(s.suplementacion_dia).some(v=>v&&v!=='ninguno'&&v!=='N/A'&&v!=='')&&(
+              {/* Hidratación y nutrición */}
+              {s.hidratacion_nutricion && (
+                <div style={{background:'rgba(122,184,232,0.06)',border:'1px solid rgba(122,184,232,0.2)',borderRadius:'var(--r)',padding:'12px 14px',marginBottom:10}}>
+                  <div style={{fontSize:10,fontFamily:'var(--fm)',color:'#7ab8e8',marginBottom:8,textTransform:'uppercase',letterSpacing:'0.5px'}}>💧 Hidratación y nutrición</div>
+                  <div style={{fontSize:13,fontWeight:500,color:'var(--text)',marginBottom:4}}>{s.hidratacion_nutricion.llevar}</div>
+                  <div style={{fontSize:12,color:'var(--text2)',marginBottom: s.hidratacion_nutricion.nota_clima?6:0}}>{s.hidratacion_nutricion.protocolo}</div>
+                  {s.hidratacion_nutricion.nota_clima && <div style={{fontSize:11,color:'#e09850',fontStyle:'italic'}}>{s.hidratacion_nutricion.nota_clima}</div>}
+                </div>
+              )}
+              {/* Suplementación */}
+              {(s.suplementacion||s.suplementacion_dia) && Object.values(s.suplementacion||s.suplementacion_dia||{}).some(v=>v&&v!=='ninguno'&&v!=='N/A'&&v!=='')&&(
                 <div style={{background:'rgba(168,213,162,0.06)',border:'1px solid rgba(168,213,162,0.15)',borderRadius:'var(--r)',padding:'10px 14px',marginBottom:10}}>
                   <div style={{fontSize:10,fontFamily:'var(--fm)',color:'var(--green2)',marginBottom:6,textTransform:'uppercase',letterSpacing:'0.5px'}}>Suplementación</div>
                   <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:8}}>
-                    {['pre','durante','post'].map(k=>s.suplementacion_dia[k]&&s.suplementacion_dia[k]!=='ninguno'&&s.suplementacion_dia[k]!=='N/A'?(
+                    {['pre','durante','post'].map(k=>{const supp=s.suplementacion||s.suplementacion_dia||{}; return supp[k]&&supp[k]!=='ninguno'&&supp[k]!=='N/A'?(
                       <div key={k}>
                         <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--fm)',marginBottom:2}}>{k==='pre'?'Pre':k==='durante'?'Durante':'Post'}</div>
-                        <div style={{fontSize:12,color:'var(--text)'}}>{s.suplementacion_dia[k]}</div>
+                        <div style={{fontSize:12,color:'var(--text)'}}>{supp[k]}</div>
                       </div>
-                    ):null)}
+                    ):null})}
                   </div>
                 </div>
               )}
               <div className="psc">{s.razon_cientifica}</div>
             </div>
           ))}
+          {plan.consejo_semana && (
+            <div style={{marginBottom:12,padding:'12px 16px',background:'rgba(109,184,106,0.08)',border:'1px solid rgba(109,184,106,0.2)',borderRadius:'var(--r)'}}>
+              <div style={{fontSize:10,fontFamily:'var(--fm)',color:'var(--green2)',marginBottom:4,textTransform:'uppercase',letterSpacing:'0.5px'}}>Consejo de la semana</div>
+              <div style={{fontSize:13,color:'var(--text)'}}>{plan.consejo_semana}</div>
+            </div>
+          )}
           {plan.referencias&&<div style={{fontSize:11,color:'var(--text3)',marginTop:12,fontFamily:'var(--fm)',padding:'10px 0',borderTop:'1px solid var(--border)'}}>{plan.referencias}</div>}
         </>
       )}
