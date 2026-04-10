@@ -24,7 +24,6 @@ export default function Perfil({ profile, saveProfile }) {
     setTimeout(()=>setSaved(false), 2500)
   }
 
-  // FTP estimado desde FCmax y nivel (sin potenciómetro)
   const ftpEstimado = form.ftp > 0 ? form.ftp : (() => {
     const base = { novato:1.5, recreativo:2.2, amateur:3.0, avanzado:3.8 }[form.nivel||'recreativo']
     return Math.round((form.peso||70) * base)
@@ -39,7 +38,6 @@ export default function Perfil({ profile, saveProfile }) {
     { z:'Z5', label:'VO2max',         pct:'> 90%',  color:ZC[4], lpm:`> ${Math.round(fm*0.90)}` },
   ]
 
-  // Zonas por potencia si tiene FTP
   const zonasWatts = form.tienePotenciometro && ftpEstimado > 0 ? [
     { z:'Z1', pct:'< 55%',    w:`< ${Math.round(ftpEstimado*0.55)}W` },
     { z:'Z2', pct:'55–75%',   w:`${Math.round(ftpEstimado*0.55)}–${Math.round(ftpEstimado*0.75)}W` },
@@ -55,7 +53,6 @@ export default function Perfil({ profile, saveProfile }) {
         <p>La IA usa estos datos para personalizar cada análisis, plan y protocolo de nutrición</p>
       </div>
 
-      {/* DATOS PERSONALES */}
       <div className="g2" style={{marginBottom:20}}>
         <div className="card">
           <div className="stit" style={{marginBottom:16}}>Datos personales</div>
@@ -85,7 +82,6 @@ export default function Perfil({ profile, saveProfile }) {
           </div>
         </div>
 
-        {/* ENTRENAMIENTO */}
         <div className="card">
           <div className="stit" style={{marginBottom:16}}>Entrenamiento</div>
           <div className="fg">
@@ -126,7 +122,6 @@ export default function Perfil({ profile, saveProfile }) {
         </div>
       </div>
 
-      {/* LOCALIZACIÓN — clave para ajustar plan */}
       <div className="card" style={{marginBottom:20}}>
         <div className="stit" style={{marginBottom:4}}>Dónde entrenas</div>
         <p style={{fontSize:12,color:'var(--text2)',marginBottom:14,lineHeight:1.6}}>
@@ -150,7 +145,7 @@ export default function Perfil({ profile, saveProfile }) {
               <option value="tropical caluroso">Tropical / caluroso y húmedo (+30°C)</option>
               <option value="cálido seco">Cálido seco (25-35°C, baja humedad)</option>
               <option value="templado">Templado (15-25°C)</option>
-              <option value="frío">Frío (< 15°C)</option>
+              <option value="frío">Frío (&lt; 15°C)</option>
               <option value="variable">Variable / según temporada</option>
             </select>
           </div>
@@ -161,7 +156,6 @@ export default function Perfil({ profile, saveProfile }) {
           </div>
         </div>
 
-        {/* Indicadores automáticos según ciudad */}
         {form.ciudad && (
           <div style={{marginTop:14,padding:'10px 14px',background:'var(--bg4)',borderRadius:'var(--r)',fontSize:12,color:'var(--text2)',lineHeight:1.7}}>
             <strong style={{color:'var(--text)'}}>La IA usará "{form.ciudad}" para:</strong> ajustar las zonas de FC por altitud
@@ -173,7 +167,6 @@ export default function Perfil({ profile, saveProfile }) {
         )}
       </div>
 
-      {/* POTENCIÓMETRO */}
       <div className="card" style={{marginBottom:20}}>
         <div className="stit" style={{marginBottom:4}}>Equipamiento de medición</div>
         <p style={{fontSize:12,color:'var(--text2)',marginBottom:14,lineHeight:1.6}}>
@@ -227,7 +220,6 @@ export default function Perfil({ profile, saveProfile }) {
         )}
       </div>
 
-      {/* ZONAS FC */}
       <div className="card" style={{marginBottom:24}}>
         <div className="stit" style={{marginBottom:4}}>Zonas de frecuencia cardíaca</div>
         <p style={{fontSize:12,color:'var(--text2)',marginBottom:12}}>
