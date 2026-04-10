@@ -35,6 +35,21 @@ function estimateZoneDistribution(hrAvg, fcmax = 185) {
   return zones
 }
 
+
+// Estimate % time in optimal cadence range (80-100rpm) from average cadence
+// Uses normal distribution with typical std dev of 12rpm
+function estimateCadPctOptimal(cadAvg) {
+  if (!cadAvg || cadAvg < 20) return 0
+  const std  = 12
+  const mean = cadAvg
+  function erf(x) {
+    const a = 0.147, s = x < 0 ? -1 : 1, x2 = x*x
+    return s * Math.sqrt(1 - Math.exp(-x2*(4/Math.PI + a*x2)/(1 + a*x2)))
+  }
+  function ncdf(x) { return 0.5*(1 + erf((x-mean)/(std*Math.SQRT2))) }
+  return Math.round(Math.max(0, Math.min(100, (ncdf(100) - ncdf(80))*100)))
+}
+
 // Calculate real zone distribution from HR stream
 function calcZones(hrStream, fcmax) {
   if (!hrStream?.length || !fcmax) return [0,0,0,0,0]
@@ -220,6 +235,7 @@ export default async function handler(req) {
     const cadStream   = s?.cadence?.data || []
     const cadMetrics  = calcCadenceMetrics(cadStream)
     const cadAvg      = cadMetrics.avg || Math.round(a.average_cadence || a.laps?.[0]?.average_cadence || 0)
+    const cadPctOpt   = cadMetrics.avg > 0 ? cadMetrics.pctOptimal : estimateCadPctOptimal(cadAvg)
 
     // Velocity stream (m/s)
     const velStream   = s?.velocity_smooth?.data || []
@@ -265,7 +281,7 @@ export default async function handler(req) {
       hrAvg, hrMax,
       // Cadence
       cad:          cadAvg,
-      cadPctOptimal: cadMetrics.pctOptimal,           // % time 80-100rpm
+      cadPctOptimal: cadPctOpt,                      // % time 80-100rpm (real or estimated)
       cadStdDev:    cadMetrics.stdDev,                // technique consistency
       // Power
       watts:        wattsAvg,
