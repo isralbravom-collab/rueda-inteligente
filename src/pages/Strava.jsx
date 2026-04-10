@@ -18,6 +18,53 @@ function estimateRPE(hrAvg, fcmax = 185) {
   return 10
 }
 
+// Estima sensación posterior usando FC, cadencia, zonas, duración y elevación
+function estimateSensacion(ride, fcmax = 185) {
+  const hrAvg  = ride.hrAvg || ride.hr_avg || 0
+  const cad    = ride.cad   || ride.cadence || 0
+  const dur    = ride.dur   || 0
+  const eg     = ride.eg    || 0
+  const zp     = Array.isArray(ride.zp) ? ride.zp : []
+  const z45    = (zp[3]||0) + (zp[4]||0)   // % tiempo en zona alta
+
+  // Score de esfuerzo: 0 (fácil) → 10 (extremo)
+  let score = 0
+
+  // FC como % de FCmax
+  if (hrAvg > 40 && fcmax > 0) {
+    const pct = hrAvg / fcmax * 100
+    if (pct >= 90) score += 4
+    else if (pct >= 82) score += 3
+    else if (pct >= 74) score += 2
+    else if (pct >= 65) score += 1
+  }
+
+  // Tiempo en zonas altas (Z4+Z5)
+  if (z45 >= 40) score += 3
+  else if (z45 >= 25) score += 2
+  else if (z45 >= 10) score += 1
+
+  // Duración larga suma fatiga
+  if (dur >= 180) score += 3
+  else if (dur >= 120) score += 2
+  else if (dur >= 90)  score += 1
+
+  // Elevación alta suma esfuerzo
+  if (eg >= 1000) score += 2
+  else if (eg >= 500) score += 1
+
+  // Cadencia baja bajo carga = más esfuerzo muscular
+  if (cad > 0 && cad < 75 && score >= 3) score += 1
+
+  // Mapear score → sensación
+  if (score >= 9) return 'muy cansado'
+  if (score >= 7) return 'cansado'
+  if (score >= 5) return 'regular'
+  if (score >= 3) return 'bien'
+  if (score >= 1) return 'bien'
+  return 'muy bien'
+}
+
 // Agrupa actividades del mismo día con < 2h de diferencia (pausas largas)
 function mergeSegments(rides) {
   const groups = []
@@ -51,7 +98,7 @@ function mergeSegments(rides) {
   return groups
 }
 
-const DAYS_OLD_THRESHOLD = 30  // rodadas de más de 30 días → RPE estimado automático
+const DAYS_OLD_THRESHOLD = 1   // cualquier rodada con FC o cadencia → RPE+sensación automáticos
 
 export default function Strava({ rides, addRide, isDuplicate, profile }) {
   const [stravaAuth, setStravaAuth] = useState(() => load('ri3_strava', null))
@@ -138,10 +185,15 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
       const now = Date.now()
       const initRpe = {}, initSen = {}
       newRides.forEach(r => {
-        const daysOld = Math.round((now - new Date(r.iso).getTime()) / 86400000)
-        if (daysOld >= DAYS_OLD_THRESHOLD) {
-          initRpe[r.stravaId] = estimateRPE(r.hrAvg, profile.fcmax || 185)
-          initSen[r.stravaId] = 'bien'  // sensación default para rodadas viejas
+        const hasObjectiveData = (r.hrAvg > 40) || (r.cad > 0) || (r.cadence > 0) || (Array.isArray(r.zp) && r.zp.some(v=>v>0))
+        if (hasObjectiveData) {
+          // Estimación inteligente con datos objetivos disponibles
+          initRpe[r.stravaId] = estimateRPE(r.hrAvg || 0, profile.fcmax || 185)
+          initSen[r.stravaId] = estimateSensacion(r, profile.fcmax || 185)
+        } else {
+          // Sin datos objetivos: RPE moderado, sensación neutra como punto de partida
+          initRpe[r.stravaId] = 5
+          initSen[r.stravaId] = 'bien'
         }
       })
       setRpeInputs(initRpe)
@@ -154,7 +206,7 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
         const oldCount = newRides.filter(r => Math.round((now - new Date(r.iso).getTime()) / 86400000) >= DAYS_OLD_THRESHOLD).length
         const newCount = newRides.length - oldCount
         let msg = `${newRides.length} actividad${newRides.length > 1 ? 'es' : ''} encontrada${newRides.length > 1 ? 's' : ''}.`
-        if (oldCount > 0) msg += ` ${oldCount} con más de ${DAYS_OLD_THRESHOLD} días tienen RPE estimado automáticamente por FC.`
+        if (oldCount > 0) msg += ` ${oldCount} con RPE y sensación estimados automáticamente por FC y cadencia — ajusta si lo recuerdas.`
         if (newCount > 0) msg += ` ${newCount} reciente${newCount > 1 ? 's' : ''} requiere${newCount > 1 ? 'n' : ''} tu RPE.`
         setResult({ type: 'info', msg })
       }
@@ -268,7 +320,7 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
                 <div>
                   <div style={{fontSize:14,fontWeight:500}}>Rodadas antiguas ({oldRides.length})</div>
-                  <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>Más de {DAYS_OLD_THRESHOLD} días · RPE estimado automáticamente por FC · puedes ajustarlo</div>
+                  <div style={{fontSize:12,color:'var(--text2)',marginTop:2}}>RPE y sensación estimados por IA según FC, cadencia, zonas y esfuerzo · ajusta si lo recuerdas</div>
                 </div>
               </div>
               <div style={{display:'grid',gap:8}}>
@@ -392,7 +444,7 @@ export default function Strava({ rides, addRide, isDuplicate, profile }) {
         <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12}}>
           {[
             {t:'Autorización única',d:'Solo la primera vez. Tu contraseña nunca llega a la app.'},
-            {t:'RPE inteligente',d:`Rodadas de más de ${DAYS_OLD_THRESHOLD} días reciben RPE estimado automáticamente por FC. Las recientes requieren tu input.`},
+            {t:'RPE inteligente',d:`Rodadas con FC o cadencia reciben RPE y sensación estimados automáticamente por IA (FC, zonas, duración, elevación). Solo ajusta si recuerdas diferente.`},
             {t:'Sin duplicados',d:'Actividades del mismo día con pausa corta se fusionan automáticamente en una sola rodada.'},
           ].map(item=>(
             <div key={item.t} style={{background:'var(--bg3)',borderRadius:'var(--r)',padding:'12px 14px'}}>
