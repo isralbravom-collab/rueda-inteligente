@@ -295,3 +295,92 @@ STACK:\n${stack}
 Responde SOLO con JSON:
 {"analisis_general":"...","por_suplemento":[{"nombre":"...","evidencia":"solida|moderada|debil","timing_optimo":"...","con_este_perfil":"...","ajuste_sugerido":"..."}],"protocolo_semana":{"dia_intenso":["..."],"dia_z2":["..."],"dia_descanso":["..."]},"referencias":"..."}`
 }
+
+// ── Plan de competencia DETALLADO semana por semana
+export function buildCompetitionPlanDetailed(rides, supps, profile, competition) {
+  const fit    = calcFitness(rides)
+  const now    = new Date()
+  const daysTo = Math.round((new Date(competition.date)-now)/86400000)
+  const weeksTo= Math.ceil(daysTo/7)
+  const hist   = rides.slice(0,6).map(r => rideStr(r)).join('\n')
+  const suppStr= supps.length ? supps.map(s=>`${s.n} ${s.d}`).join(', ') : 'ninguna'
+  const dias   = profile.dias || 3
+  const fcmax  = profile.fcmax || 185
+  const peso   = profile.peso || 70
+  const calima = (profile.clima||'').includes('tropical')||(profile.clima||'').includes('caluroso')
+
+  const baseWeeks  = Math.max(1, weeksTo - 3)
+  const intWeeks   = Math.min(2, weeksTo - 1)
+  const taperWeeks = 1
+
+  const fcZ2   = `${Math.round(fcmax*.65)}-${Math.round(fcmax*.75)} lpm`
+  const fcZ3   = `${Math.round(fcmax*.75)}-${Math.round(fcmax*.83)} lpm`
+  const fcZ4   = `${Math.round(fcmax*.83)}-${Math.round(fcmax*.90)} lpm`
+  const mlBase = Math.round(peso*7+300)
+  const nota   = calima ? 'Rodar temprano. Añade sal al agua.' : ''
+
+  return `Eres coach de ciclismo experto. Genera plan de periodización DETALLADO semana por semana hacia una competencia.
+
+ATLETA: ${profile.nombre||'atleta'} · ${profile.nivel} · ${peso}kg · FCmax:${fcmax}lpm · ${dias}días/sem
+FORMA: ATL=${fit.atl} CTL=${fit.ctl} TSB=${fit.tsb} · TSS prom/sem:${fit.avgWeekTSS}
+COMPETENCIA: "${competition.name}" · ${daysTo} días (${weeksTo} semanas) · ${competition.distance||'?'}km · ${competition.type||'gran fondo'} · meta: "${competition.goal||'terminar'}"
+SUPLEMENTACIÓN: ${suppStr}
+HISTORIAL:
+${hist||'sin datos'}
+
+ESTRUCTURA DE FASES:
+- Semanas 1-${baseWeeks}: BASE → volumen creciente, Z1-Z2 dominante, construir base aeróbica
+- Semanas ${baseWeeks+1}-${weeksTo-1}: INTENSIFICACIÓN → intervalos, simulacros, Z3-Z4
+- Semana ${weeksTo}: TAPERING → reducir 40-50% volumen, mantener algo de intensidad, llegar fresco
+
+REGLAS:
+1. Cada semana tiene EXACTAMENTE ${dias} sesiones
+2. Lenguaje SIMPLE — hablar de sensaciones, no de métricas
+3. Incluir hidratación específica por sesión
+4. TSS total semana BASE: ~${Math.round(fit.avgWeekTSS*1.05)} · INTENSIFICACIÓN: ~${Math.round(fit.avgWeekTSS*1.1)} · TAPERING: ~${Math.round(fit.avgWeekTSS*0.55)}
+
+Responde SOLO con JSON (sin texto antes ni después):
+{
+  "competencia": "${competition.name}",
+  "fecha_competencia": "${competition.date}",
+  "distancia_km": ${competition.distance||135},
+  "meta": "${competition.goal||'terminar'}",
+  "resumen": "2-3 oraciones sobre la estrategia general en lenguaje simple",
+  "consejo_general": "Un consejo práctico para este atleta específico",
+  "semanas": [
+    {
+      "numero": 1,
+      "fase": "Base",
+      "objetivo": "objetivo de esta semana en lenguaje simple",
+      "tss_objetivo": ${Math.round(fit.avgWeekTSS*1.0)},
+      "sesiones": [
+        {
+          "dia": "lunes",
+          "titulo": "...",
+          "tipo": "rodaje suave",
+          "descripcion": "CALENTAMIENTO: 10min. PRINCIPAL: descripción concreta. VUELTA CALMA: 5min.",
+          "duracion_min": 60,
+          "zona": "Z2",
+          "lenguaje_simple": "Rueda cómodo, puedes hablar sin problema",
+          "fc_objetivo": "${fcZ2}",
+          "rpe_objetivo": 5,
+          "hidratacion": "700ml agua. Sorbo cada 15min.",
+          "nota_clima": "${nota}"
+        }
+      ],
+      "nota_semana": "Qué enfatizar esta semana"
+    }
+  ],
+  "protocolo_competencia": {
+    "dia_antes": "qué hacer el día previo: alimentación, hidratación, descanso",
+    "manana_carrera": "qué comer/beber 2-3h antes",
+    "durante": "cada cuánto comer/beber según distancia de ${competition.distance||135}km",
+    "post": "qué hacer al terminar"
+  },
+  "referencias": "Bompa 2018, Seiler 2010, Allen & Coggan 2010"
+}
+
+Genera las ${weeksTo} semanas completas con ${dias} sesiones cada una. No omitas ninguna semana.`
+}
+
+
