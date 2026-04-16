@@ -14,9 +14,29 @@ export async function callIA(prompt, maxTokens = 400) {
 }
 
 export function extractJSON(raw) {
-  try { return JSON.parse(raw) } catch {}
-  const m = raw.match(/\{[\s\S]*\}/)
+  if (!raw) return null
+  // Try direct parse first
+  try { return JSON.parse(raw.trim()) } catch {}
+  // Strip markdown code blocks
+  const stripped = raw.replace(/```json|```/g, '').trim()
+  try { return JSON.parse(stripped) } catch {}
+  // Find the largest {...} block
+  const m = stripped.match(/\{[\s\S]*\}/)
   if (m) { try { return JSON.parse(m[0]) } catch {} }
+  // Try to find and fix truncated JSON by finding last complete object
+  const start = stripped.indexOf('{')
+  if (start >= 0) {
+    // Try progressively shorter substrings to find valid JSON
+    for (let end = stripped.length; end > start+10; end--) {
+      const sub = stripped.slice(start, end)
+      try { return JSON.parse(sub) } catch {}
+      // Try closing open structures
+      const closes = ['}', ']}', ']}', '"}]}', '"]}']
+      for (const close of closes) {
+        try { return JSON.parse(sub + close) } catch {}
+      }
+    }
+  }
   return null
 }
 
@@ -296,91 +316,55 @@ Responde SOLO con JSON:
 {"analisis_general":"...","por_suplemento":[{"nombre":"...","evidencia":"solida|moderada|debil","timing_optimo":"...","con_este_perfil":"...","ajuste_sugerido":"..."}],"protocolo_semana":{"dia_intenso":["..."],"dia_z2":["..."],"dia_descanso":["..."]},"referencias":"..."}`
 }
 
-// ── Plan de competencia DETALLADO semana por semana
 export function buildCompetitionPlanDetailed(rides, supps, profile, competition) {
   const fit    = calcFitness(rides)
   const now    = new Date()
   const daysTo = Math.round((new Date(competition.date)-now)/86400000)
   const weeksTo= Math.ceil(daysTo/7)
-  const hist   = rides.slice(0,6).map(r => rideStr(r)).join('\n')
-  const suppStr= supps.length ? supps.map(s=>`${s.n} ${s.d}`).join(', ') : 'ninguna'
   const dias   = profile.dias || 3
   const fcmax  = profile.fcmax || 185
   const peso   = profile.peso || 70
   const calima = (profile.clima||'').includes('tropical')||(profile.clima||'').includes('caluroso')
+  const hist   = rides.slice(0,5).map(r => {
+    const d = Math.round((Date.now()-new Date(r.iso).getTime())/86400000)
+    return `[hace ${d}d] ${Math.round(r.dur)}min ${(r.dist||0).toFixed(1)}km RPE:${r.rpe} TSS:${tssOf(r)}`
+  }).join('\n')
 
-  const baseWeeks  = Math.max(1, weeksTo - 3)
-  const intWeeks   = Math.min(2, weeksTo - 1)
-  const taperWeeks = 1
-
-  const fcZ2   = `${Math.round(fcmax*.65)}-${Math.round(fcmax*.75)} lpm`
-  const fcZ3   = `${Math.round(fcmax*.75)}-${Math.round(fcmax*.83)} lpm`
-  const fcZ4   = `${Math.round(fcmax*.83)}-${Math.round(fcmax*.90)} lpm`
-  const mlBase = Math.round(peso*7+300)
+  const fcZ2   = `${Math.round(fcmax*.65)}-${Math.round(fcmax*.75)}`
+  const fcZ3   = `${Math.round(fcmax*.75)}-${Math.round(fcmax*.83)}`
   const nota   = calima ? 'Rodar temprano. Añade sal al agua.' : ''
+  const mlH    = Math.round(peso*7+300)
+  const baseW  = Math.max(1, weeksTo-3)
+  const suppStr= (profile.supps||[]).length ? 'ver perfil' : 'ninguna registrada'
 
-  return `Eres coach de ciclismo experto. Genera plan de periodización DETALLADO semana por semana hacia una competencia.
+  // Generate week templates based on phase
+  const weekTemplates = []
+  for (let w=1; w<=weeksTo; w++) {
+    const fase = w <= baseW ? 'Base' : w < weeksTo ? 'Intensificación' : 'Tapering'
+    const tssObj = fase==='Base' ? Math.round(fit.avgWeekTSS*1.0) : fase==='Intensificación' ? Math.round(fit.avgWeekTSS*1.1) : Math.round(fit.avgWeekTSS*0.55)
+    weekTemplates.push(`Semana ${w} (${fase}, TSS objetivo ~${tssObj}): ${dias} sesiones`)
+  }
+
+  return `Coach ciclismo experto. Plan de periodización SEMANA POR SEMANA para competencia.
 
 ATLETA: ${profile.nombre||'atleta'} · ${profile.nivel} · ${peso}kg · FCmax:${fcmax}lpm · ${dias}días/sem
-FORMA: ATL=${fit.atl} CTL=${fit.ctl} TSB=${fit.tsb} · TSS prom/sem:${fit.avgWeekTSS}
-COMPETENCIA: "${competition.name}" · ${daysTo} días (${weeksTo} semanas) · ${competition.distance||'?'}km · ${competition.type||'gran fondo'} · meta: "${competition.goal||'terminar'}"
-SUPLEMENTACIÓN: ${suppStr}
-HISTORIAL:
+FORMA ACTUAL: ATL=${fit.atl} CTL=${fit.ctl} TSB=${fit.tsb} · TSS prom/sem:${fit.avgWeekTSS}
+COMPETENCIA: "${competition.name}" · ${daysTo} días · ${weeksTo} semanas · ${competition.distance||'?'}km · meta: "${competition.goal||'terminar'}"
+${calima ? 'CLIMA: tropical/caluroso — rodar temprano, +250ml/hora' : ''}
+HISTORIAL RECIENTE:
 ${hist||'sin datos'}
 
-ESTRUCTURA DE FASES:
-- Semanas 1-${baseWeeks}: BASE → volumen creciente, Z1-Z2 dominante, construir base aeróbica
-- Semanas ${baseWeeks+1}-${weeksTo-1}: INTENSIFICACIÓN → intervalos, simulacros, Z3-Z4
-- Semana ${weeksTo}: TAPERING → reducir 40-50% volumen, mantener algo de intensidad, llegar fresco
+SEMANAS A GENERAR:
+${weekTemplates.join('\n')}
 
-REGLAS:
-1. Cada semana tiene EXACTAMENTE ${dias} sesiones
-2. Lenguaje SIMPLE — hablar de sensaciones, no de métricas
-3. Incluir hidratación específica por sesión
-4. TSS total semana BASE: ~${Math.round(fit.avgWeekTSS*1.05)} · INTENSIFICACIÓN: ~${Math.round(fit.avgWeekTSS*1.1)} · TAPERING: ~${Math.round(fit.avgWeekTSS*0.55)}
+REGLAS CRÍTICAS:
+1. Genera EXACTAMENTE ${weeksTo} semanas en el array "semanas"
+2. Cada semana tiene EXACTAMENTE ${dias} sesiones en su array "sesiones"
+3. Lenguaje simple — hablar de sensaciones, no de métricas técnicas
+4. FC objetivo para Z2: ${fcZ2} lpm · Z3: ${fcZ3} lpm
+5. Hidratación: <60min=${Math.round(peso*5+200)}ml · 60-90min=${mlH}ml/h · >90min=${Math.round(peso*8+400)}ml/h+gel
+6. Incluir "nota_clima": "${nota}"
 
-Responde SOLO con JSON (sin texto antes ni después):
-{
-  "competencia": "${competition.name}",
-  "fecha_competencia": "${competition.date}",
-  "distancia_km": ${competition.distance||135},
-  "meta": "${competition.goal||'terminar'}",
-  "resumen": "2-3 oraciones sobre la estrategia general en lenguaje simple",
-  "consejo_general": "Un consejo práctico para este atleta específico",
-  "semanas": [
-    {
-      "numero": 1,
-      "fase": "Base",
-      "objetivo": "objetivo de esta semana en lenguaje simple",
-      "tss_objetivo": ${Math.round(fit.avgWeekTSS*1.0)},
-      "sesiones": [
-        {
-          "dia": "lunes",
-          "titulo": "...",
-          "tipo": "rodaje suave",
-          "descripcion": "CALENTAMIENTO: 10min. PRINCIPAL: descripción concreta. VUELTA CALMA: 5min.",
-          "duracion_min": 60,
-          "zona": "Z2",
-          "lenguaje_simple": "Rueda cómodo, puedes hablar sin problema",
-          "fc_objetivo": "${fcZ2}",
-          "rpe_objetivo": 5,
-          "hidratacion": "700ml agua. Sorbo cada 15min.",
-          "nota_clima": "${nota}"
-        }
-      ],
-      "nota_semana": "Qué enfatizar esta semana"
-    }
-  ],
-  "protocolo_competencia": {
-    "dia_antes": "qué hacer el día previo: alimentación, hidratación, descanso",
-    "manana_carrera": "qué comer/beber 2-3h antes",
-    "durante": "cada cuánto comer/beber según distancia de ${competition.distance||135}km",
-    "post": "qué hacer al terminar"
-  },
-  "referencias": "Bompa 2018, Seiler 2010, Allen & Coggan 2010"
+FORMATO JSON REQUERIDO (responde SOLO con esto, sin texto antes ni después):
+{"competencia":"${competition.name}","fecha_competencia":"${competition.date}","distancia_km":${competition.distance||135},"meta":"${competition.goal||'terminar'}","resumen":"estrategia general en 2 oraciones simples","consejo_general":"consejo específico para este atleta","semanas":[{"numero":1,"fase":"Base","objetivo":"qué lograr esta semana","tss_objetivo":${Math.round(fit.avgWeekTSS)},"sesiones":[{"dia":"lunes","titulo":"...","tipo":"rodaje suave","descripcion":"CALENTAMIENTO: 10min. PRINCIPAL: 40min cómodo. VUELTA CALMA: 10min.","duracion_min":60,"zona":"Z2","lenguaje_simple":"Rueda cómodo, puedes hablar sin problema","fc_objetivo":"${fcZ2} lpm","rpe_objetivo":5,"hidratacion":"${mlH}ml agua. Sorbo cada 15min.","nota_clima":"${nota}"}],"nota_semana":"nota de enfoque"}],"protocolo_competencia":{"dia_antes":"qué comer y hacer el día previo","manana_carrera":"qué desayunar 2-3h antes","durante":"cada cuánto comer y beber en ${competition.distance||135}km","post":"recuperación al terminar"},"referencias":"Bompa 2018, Seiler 2010"}`
 }
-
-Genera las ${weeksTo} semanas completas con ${dias} sesiones cada una. No omitas ninguna semana.`
-}
-
-
