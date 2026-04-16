@@ -224,7 +224,7 @@ export default function Plan({ rides, supps, profile, activePlan, savePlan, clea
     if (!compName || !compDate) return alert('Ingresa nombre y fecha de la competencia')
     setLoading(true); setError(''); setCompPlan(null)
     const comp = { name:compName, date:compDate, distance:compDist, type:compType, goal:compGoal }
-    const raw  = await callIA(buildCompetitionPlanDetailed(rides, supps, profile, comp), 3000)
+    const raw  = await callIA(buildCompetitionPlanDetailed(rides, supps, profile, comp), 3500)
     const parsed = extractJSON(raw)
     if (parsed) {
       const withType = { ...parsed, type:'competition', generatedAt: new Date().toISOString() }
