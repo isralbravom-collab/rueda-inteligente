@@ -13,7 +13,6 @@ export async function callIA(prompt, maxTokens = 400) {
   }
 }
 
-// Extrae JSON de una respuesta aunque venga con texto antes/después
 export function extractJSON(raw) {
   try { return JSON.parse(raw) } catch {}
   const m = raw.match(/\{[\s\S]*\}/)
@@ -25,12 +24,10 @@ export const RPE_LABELS = {1:'Reposo',2:'Muy fácil',3:'Fácil',4:'Fácil+',5:'M
 
 export function tssOf(r) {
   if (r.wattsNorm && r.wattsNorm > 0 && r.hasPower) {
-    // TSS real con potencia: (seg × NP × IF) / (FTP × 3600) × 100
     const ftp = r.ftp || 150
     const IF  = r.wattsNorm / ftp
     return Math.round((r.dur * 60) * r.wattsNorm * IF / (ftp * 3600) * 100)
   }
-  // TSS estimado por RPE y duración
   return Math.round((r.dur / 60) * Math.pow((r.rpe || 5) / 10, 2) * 67)
 }
 
@@ -87,7 +84,8 @@ export function calcFitness(rides) {
   const totalKm     = rides.reduce((a,r)=>a+(r.dist||0),0)
   const totalHours  = rides.reduce((a,r)=>a+(r.dur||0),0)/60
 
-  return { atl, ctl, tsb, trend, zAvg, daysSinceLast, maxWeekTSS, avgWeekTSS, weekLoad, monthLoad, totalRides, totalTSS, totalKm:Math.round(totalKm), totalHours:Math.round(totalHours*10)/10 }
+  return { atl, ctl, tsb, trend, zAvg, daysSinceLast, maxWeekTSS, avgWeekTSS, weekLoad, monthLoad,
+    totalRides, totalTSS, totalKm:Math.round(totalKm), totalHours:Math.round(totalHours*10)/10 }
 }
 
 export function interpretFitness(fit) {
@@ -110,68 +108,42 @@ export function interpretFitness(fit) {
   return { atlStatus, ctlStatus, tsbStatus }
 }
 
-// ── Formato enriquecido de rodada para prompt
-function rideStr(r, idx = '') {
-  const d    = Math.round((Date.now()-new Date(r.iso).getTime())/86400000)
-  const sp   = r.speed || (r.dur>0 ? (r.dist/(r.dur/60)).toFixed(1) : '?')
-  const cad  = r.cad > 0 ? `cad:${Math.round(r.cad)}rpm(${r.cadPctOptimal||'?'}%opt)` : 'sin cadencia'
-  const pow  = r.watts > 0 ? `${r.watts}W${r.hasPower?'real':'est'}` : ''
-  const dec  = r.decoupling != null ? `dec:${r.decoupling}%` : ''
-  const zstr = (r.zp||[]).map((p,i)=>`Z${i+1}:${p}%`).join(' ')
-  return `[hace ${d}d · ${r.fecha}] ${Math.round(r.dur)}min mov ${(r.dist||0).toFixed(1)}km ${sp}km/h FC:${Math.round(r.hrAvg||0)}/${r.hrMax||'?'}lpm ${cad} ${pow} ${dec} TSS≈${tssOf(r)} ${zstr} RPE:${r.rpe} sen:${r.sen}`
+function rideStr(r) {
+  const d   = Math.round((Date.now()-new Date(r.iso).getTime())/86400000)
+  const sp  = r.speed||(r.dur>0?(r.dist/(r.dur/60)).toFixed(1):'?')
+  const cad = r.cad>0 ? `cad:${Math.round(r.cad)}rpm` : ''
+  const pow = r.watts>0 ? `${r.watts}W` : ''
+  const dec = r.decoupling!=null ? `dec:${r.decoupling}%` : ''
+  return `[hace ${d}d·${r.fecha}] ${Math.round(r.dur)}min ${(r.dist||0).toFixed(1)}km ${sp}km/h FC:${Math.round(r.hrAvg||0)}lpm ${cad} ${pow} ${dec} RPE:${r.rpe} sen:${r.sen} TSS:${tssOf(r)}`
 }
 
 export function buildRidePrompt(ride, history, supps, profile) {
   const fit     = calcFitness([ride, ...history])
   const hist    = history.slice(0,5).map(r => rideStr(r)).join('\n')
   const suppStr = supps.length ? supps.map(s=>`${s.n} ${s.d}(${s.t})`).join(', ') : 'ninguna'
+  const cadCtx  = ride.cad > 0 ? `${Math.round(ride.cad)}rpm · ${ride.cadPctOptimal||0}% en rango óptimo` : 'no registrada'
+  const powCtx  = ride.watts > 0 ? `${ride.watts}W ${ride.hasPower?'real':'estimada'}` : 'sin datos'
 
-  const cadCtx = ride.cad > 0
-    ? `Cadencia: ${Math.round(ride.cad)}rpm · ${ride.cadPctOptimal||0}% en rango óptimo (80-100rpm) · variabilidad σ=${ride.cadStdDev||'?'}rpm`
-    : 'Cadencia: no registrada'
+  return `Analiza esta rodada.
 
-  const powCtx = ride.watts > 0
-    ? `Potencia: ${ride.watts}W ${ride.hasPower?'(potenciómetro real)':'(estimada por física)'} · ${ride.kilojoules||0}kJ · ${ride.calories||0}kcal`
-    : 'Potencia: sin datos'
-
-  const decCtx = ride.decoupling != null
-    ? `Desacoplamiento aeróbico: ${ride.decoupling}% ${Math.abs(ride.decoupling)>5?'(significativo — base Z2 necesita desarrollo)':'(aceptable)'}`
-    : ''
-
-  const pauseCtx = (ride.pauseMin||0) > 10
-    ? `Incluye pausa de ${ride.pauseMin}min${ride.longPauses>0?' (pausa larga intencional detectada)':''} — métricas calculadas sobre tiempo en movimiento`
-    : ''
-
-  return `Analiza esta rodada con todos sus datos disponibles.
-
-PERFIL: Nivel:${profile.nivel} Objetivo:${profile.objetivo} FCmax:${profile.fcmax||185}lpm Peso:${profile.peso||70}kg ${profile.dias||3}días/sem
+PERFIL: ${profile.nivel} FCmax:${profile.fcmax||185} Peso:${profile.peso||70}kg
 SUPLEMENTACIÓN: ${suppStr}
-FORMA: ATL=${fit.atl}TSS/día CTL=${fit.ctl}TSS/día TSB=${fit.tsb} hace ${fit.daysSinceLast}d sin entrenar
+FORMA: ATL=${fit.atl} CTL=${fit.ctl} TSB=${fit.tsb} hace ${fit.daysSinceLast}d sin entrenar
 
 RODADA — ${ride.name} · ${ride.fecha}
-• Tiempo: ${Math.round(ride.dur)}min en movimiento${ride.elapsedMin?` / ${ride.elapsedMin}min total`:''} ${pauseCtx}
-• Distancia: ${(ride.dist||0).toFixed(1)}km · Velocidad: ${ride.speed||(ride.dur>0?((ride.dist||0)/(ride.dur/60)).toFixed(1):'?')}km/h
+• ${Math.round(ride.dur)}min · ${(ride.dist||0).toFixed(1)}km · ${ride.speed||(ride.dur>0?((ride.dist||0)/(ride.dur/60)).toFixed(1):'?')}km/h
 • FC: ${Math.round(ride.hrAvg||0)}/${ride.hrMax||'?'}lpm · Elevación: +${Math.round(ride.eg||0)}m
 • Zonas: Z1:${(ride.zp||[])[0]||0}% Z2:${(ride.zp||[])[1]||0}% Z3:${(ride.zp||[])[2]||0}% Z4:${(ride.zp||[])[3]||0}% Z5:${(ride.zp||[])[4]||0}%
-• ${cadCtx}
-• ${powCtx}
-${decCtx ? '• ' + decCtx : ''}
-${ride.temp ? '• Temperatura: '+Math.round(ride.temp)+'°C' : ''}
-• RPE: ${ride.rpe}/10 (${RPE_LABELS[ride.rpe]}) · Sensación: ${ride.sen}
+• Cadencia: ${cadCtx} · Potencia: ${powCtx}
+• RPE: ${ride.rpe}/10 · Sensación: ${ride.sen}
 ${ride.com ? '• Comentario: '+ride.com : ''}
 
-HISTORIAL RECIENTE:
-${hist || 'Primera rodada'}
+HISTORIAL: ${hist||'Primera rodada'}
 
-Evalúa en 150 palabras, párrafo corrido sin bullet points:
-1) Coherencia FC vs RPE y calidad de las zonas
-2) Si cadencia < 80rpm o variabilidad alta: recomendar trabajo de cadencia
-3) Desacoplamiento aeróbico si aplica
-4) Carga acumulada (ATL/TSB) y riesgo sobreentrenamiento
-5) UNA sugerencia concreta para próxima rodada con tipo, duración, intensidad y RPE objetivo`
+Evalúa en 150 palabras: coherencia FC vs RPE, zonas, cadencia si aplica, carga acumulada, riesgo sobreentrenamiento. Da UNA sugerencia concreta para próxima rodada.`
 }
 
-export function buildPlanPrompt(rides, supps, profile, context = '', competition = null) {
+export function buildPlanPrompt(rides, supps, profile, context = '') {
   const fit  = calcFitness(rides)
   const now  = new Date()
   const dow  = now.getDay()
@@ -183,132 +155,81 @@ export function buildPlanPrompt(rides, supps, profile, context = '', competition
     return `${name} ${d.getDate()} ${d.toLocaleDateString('es-MX',{month:'short'})}`
   })
 
-  // ── Historial enriquecido
-  const hist = rides.slice(0,10).map(r => {
-    const d   = Math.round((Date.now()-new Date(r.iso).getTime())/86400000)
-    const sp  = r.speed||(r.dur>0?((r.dist||0)/(r.dur/60)).toFixed(1):'?')
-    const pow = r.watts>0 ? `${r.watts}W${r.hasPower?'':'est'}` : ''
-    const cad = r.cad>0 ? `cad:${Math.round(r.cad)}rpm` : ''
-    const dec = r.decoupling!=null ? `dec:${r.decoupling}%` : ''
-    return `  [hace ${d}d · ${r.fecha}] ${Math.round(r.dur)}min ${(r.dist||0).toFixed(1)}km ${sp}km/h FC:${Math.round(r.hrAvg||0)}lpm ${cad} ${pow} ${dec} RPE:${r.rpe} sen:${r.sen} TSS≈${tssOf(r)}`
-  }).join('\n')
-
-  // ── Carga semanal últimas 6 semanas
-  const wHistory = Object.entries(fit.weekLoad)
-    .sort(([a],[b])=>a.localeCompare(b)).slice(-6)
-    .map(([,v])=>`  sem ${v.label}: ${v.count} rodadas TSS=${v.tss}`)
-    .join('\n')
-
-  // ── Suplementación
-  const suppStr = supps.length
-    ? supps.map(s=>`${s.n} ${s.d}(${s.t}): ${s.o}`).join(' | ')
-    : 'ninguna registrada'
-
-  // ── Geografía y clima
+  const dias     = profile.dias || 3
+  const hist     = rides.slice(0,8).map(r => rideStr(r)).join('\n')
+  const suppStr  = supps.length ? supps.map(s=>`${s.n} ${s.d}(${s.t}): ${s.o}`).join(' | ') : 'ninguna'
   const ciudad   = profile.ciudad || 'no especificada'
   const altitud  = parseInt(profile.altitud)||0
   const clima    = profile.clima || 'templado'
   const horario  = profile.horariosDisponibles || 'flexible'
-  const altAdj   = altitud > 1500
-    ? `AJUSTE ALTITUD: a ${altitud}m el VO2max baja ~${Math.round((altitud-500)/300)*3}% vs nivel del mar. Las zonas de FC se elevan 5-8 lpm para el mismo esfuerzo. Esperar velocidades ~10% menores que a nivel del mar.`
-    : 'Altitud baja — sin ajuste necesario.'
-  const climaAdj = clima.includes('tropical') || clima.includes('caluroso')
-    ? `AJUSTE CALOR/HUMEDAD: añadir +200-300ml agua/hora. Rodar idealmente en ${horario==='mañana'?'la mañana temprano':horario} para evitar el pico de calor. El RPE percibido será 1-2 puntos mayor que en climas frescos.`
-    : clima.includes('frío')
-    ? 'AJUSTE FRÍO: calentamiento de 15min antes de intensidad. Hidratación regular aunque no se sienta sed.'
-    : 'Clima favorable para entrenar.'
+  const fcmax    = profile.fcmax || 185
+  const peso     = profile.peso || 70
+  const tienePow = !!profile.tienePotenciometro
+  const ftpEst   = parseInt(profile.ftp)||Math.round(peso*({novato:1.5,recreativo:2.2,amateur:3.0,avanzado:3.8}[profile.nivel||'recreativo']||2.2))
 
-  // ── Potenciómetro y FTP
-  const tienePow  = !!profile.tienePotenciometro
-  const ftp       = parseInt(profile.ftp)||0
-  const ftpEst    = ftp > 0 ? ftp : Math.round((profile.peso||70) * ({novato:1.5,recreativo:2.2,amateur:3.0,avanzado:3.8}[profile.nivel||'recreativo']||2.2))
-  const powerMode = tienePow
-    ? `MODO POTENCIA: FTP=${ftpEst}W (${(ftpEst/(profile.peso||70)).toFixed(1)}W/kg). El plan incluirá rangos de vatios por zona: Z1<${Math.round(ftpEst*.55)}W Z2:${Math.round(ftpEst*.55)}-${Math.round(ftpEst*.75)}W Z3:${Math.round(ftpEst*.75)}-${Math.round(ftpEst*.90)}W Z4:${Math.round(ftpEst*.90)}-${Math.round(ftpEst*1.05)}W Z5:>${Math.round(ftpEst*1.05)}W`
-    : `MODO FC: FCmax=${profile.fcmax||185}lpm. Zonas: Z1<${Math.round((profile.fcmax||185)*.60)} Z2:${Math.round((profile.fcmax||185)*.60)}-${Math.round((profile.fcmax||185)*.70)} Z3:${Math.round((profile.fcmax||185)*.70)}-${Math.round((profile.fcmax||185)*.80)} Z4:${Math.round((profile.fcmax||185)*.80)}-${Math.round((profile.fcmax||185)*.90)} Z5:>${Math.round((profile.fcmax||185)*.90)} lpm`
+  const wHistory = Object.entries(fit.weekLoad).sort(([a],[b])=>a.localeCompare(b)).slice(-6)
+    .map(([,v])=>`  ${v.label}: ${v.count} rodadas TSS=${v.tss}`).join('\n')
 
-  // ── Polarización actual
-  const lowPct  = fit.zAvg[0]+fit.zAvg[1]
-  const highPct = fit.zAvg[3]+fit.zAvg[4]
-  const polAdj  = highPct > 40
-    ? 'ATENCIÓN: distribución de zonas muy polarizada hacia intensidad alta. Esta semana priorizar Z2.'
-    : lowPct < 60
-    ? 'La mayoría de sesiones deben ser Z1-Z2 (principio 80/20, Seiler 2010).'
-    : 'Distribución correcta — mantener.'
+  const tsbAdv = fit.tsb>10?'FRESCO: incrementar carga 5-10%':fit.tsb<-15?'FATIGADO: reducir volumen 15-20%':'NEUTRO: mantener volumen'
+  const polAdv = (fit.zAvg[3]+fit.zAvg[4])>40?'Alta intensidad acumulada — priorizar Z1-Z2 esta semana.':'Mantener distribución actual.'
 
-  // ── TSB advice
-  const tsbAdvice = fit.tsb > 10
-    ? 'FRESCO: puede incrementar carga 5-10% sobre promedio'
-    : fit.tsb < -15
-    ? 'FATIGADO: esta semana debe ser más suave — reducir TSS 15-20%'
-    : 'NEUTRO: mantener volumen similar al promedio'
+  const mlHour  = Math.round(peso*7+300)
+  const mlHour2 = Math.round(peso*8+400)
+  const calima   = clima.includes('tropical')||clima.includes('caluroso')
 
-  // ── Competencia
-  const compStr = competition?.date
-    ? (() => {
-        const dTo = Math.round((new Date(competition.date)-now)/86400000)
-        const phase = dTo > 21 ? 'Base' : dTo > 7 ? 'Intensificación' : 'Tapering'
-        return `COMPETENCIA: "${competition.name}" en ${dTo} días · ${competition.distance||'?'}km · Fase actual: ${phase} · meta: ${competition.goal||'terminar'}`
-      })() : ''
+  const daysStr  = weekDays.slice(0,dias).join(' · ')
+  const z1 = weekDays[0]||'lunes'
+  const z2 = weekDays[1]||weekDays[0]||'martes'
+  const z3 = weekDays[2]||weekDays[1]||'miércoles'
 
-  return `Eres un coach de ciclismo experto con conocimiento científico de fisiología del ejercicio, nutrición deportiva y periodización. Tu misión es generar un plan ALTAMENTE PERSONALIZADO para un ciclista que no puede pagar un coach personal — el plan debe ser tan bueno como el que daría un entrenador profesional.
+  const fcZ2low  = Math.round(fcmax*.65)
+  const fcZ2hi   = Math.round(fcmax*.75)
+  const fcZ3low  = Math.round(fcmax*.75)
+  const fcZ3hi   = Math.round(fcmax*.83)
+  const climaNota = calima ? 'Rodar temprano. Añade sal al agua.' : altitud>2000 ? 'Bebe aunque no tengas sed.' : ''
 
-FILOSOFÍA: El plan usa lenguaje SIMPLE y ACCIONABLE. En lugar de "sesión Z2", di "rueda suave donde puedas hablar". En lugar de "TSS objetivo 80", di "60-70 minutos sin llegar a fatigarte". El usuario no necesita entender las métricas — solo necesita saber qué hacer.
+  const schemaHead = '{"sesiones":['
+  const s1 = `{"dia":"${z1}","titulo":"...","tipo":"rodaje suave","descripcion":"CALENTAMIENTO: 10min suave. PRINCIPAL: 40min cómodo. VUELTA CALMA: 10min.","duracion_min":60,"zona_principal":"Z2","lenguaje_simple":"Rueda cómodo, puedes mantener una conversación","fc_objetivo":"${fcZ2low}-${fcZ2hi} lpm","cadencia_objetivo":"85-95 rpm","rpe_objetivo":5,"tss_estimado":35,"por_que_hoy":"...","hidratacion_nutricion":{"llevar":"700ml agua","protocolo":"Sorbo cada 15min","nota_clima":"${climaNota}"},"suplementacion":{"pre":"...","durante":"...","post":"..."},"razon_cientifica":"Seiler 2010"}`
+  const s2 = `{"dia":"${z2}","titulo":"...","tipo":"rodaje continuo","descripcion":"CALENTAMIENTO: 10min. PRINCIPAL: 50min zona moderada. VUELTA CALMA: 10min.","duracion_min":70,"zona_principal":"Z2","lenguaje_simple":"...","fc_objetivo":"${fcZ2low}-${fcZ2hi} lpm","cadencia_objetivo":"85-95 rpm","rpe_objetivo":5,"tss_estimado":45,"por_que_hoy":"...","hidratacion_nutricion":{"llevar":"800ml agua + electrolito","protocolo":"Sorbo cada 12min. A los 50min: gel o plátano si llevas más de 70min.","nota_clima":"${climaNota}"},"suplementacion":{"pre":"...","durante":"...","post":"..."},"razon_cientifica":"Foster 2001"}`
+  const s3 = `{"dia":"${z3}","titulo":"...","tipo":"rodaje progresivo","descripcion":"CALENTAMIENTO: 10min. PRINCIPAL: 40min moderado-alto. VUELTA CALMA: 10min.","duracion_min":60,"zona_principal":"Z3","lenguaje_simple":"...","fc_objetivo":"${fcZ3low}-${fcZ3hi} lpm","cadencia_objetivo":"88-95 rpm","rpe_objetivo":6,"tss_estimado":55,"por_que_hoy":"...","hidratacion_nutricion":{"llevar":"800ml agua + 1 gel","protocolo":"Sorbo cada 10min. Gel a los 45min.","nota_clima":"${climaNota}"},"suplementacion":{"pre":"...","durante":"...","post":"..."},"razon_cientifica":"Bompa 2018"}`
+  const schemaTail = `],"diagnostico_semana":"...","consejo_semana":"...","tss_semana_total":135,"referencias":"Foster 2001, Seiler 2010, Bompa 2018"}`
 
-══ PERFIL DEL ATLETA ══
-Nombre: ${profile.nombre||'atleta'} | Nivel: ${profile.nivel} | Edad: ${profile.edad||'?'} | Peso: ${profile.peso||70}kg
-Objetivo: ${profile.objetivo} | Días disponibles: ${profile.dias||3}/sem | Horario: ${horario}
-${powerMode}
+  return `Eres coach de ciclismo experto. Genera plan PERSONALIZADO en lenguaje SIMPLE para ciclista sin coach personal.
 
-══ GEOGRAFÍA Y CONDICIONES ══
-Ciudad: ${ciudad} | Altitud: ${altitud}msnm | Clima: ${clima} | Ruta habitual: ${profile.ruta||'no especificada'}
-${altAdj}
-${climaAdj}
+PERFIL: ${profile.nombre||'atleta'} · ${profile.nivel} · ${profile.edad||'?'}años · ${peso}kg · ${dias}días/sem · horario:${horario}
+MEDICIÓN: ${tienePow?`Potenciómetro FTP=${ftpEst}W (${(ftpEst/peso).toFixed(1)}W/kg)`:`FC máx=${fcmax}lpm`}
+LUGAR: ${ciudad} · ${altitud}msnm · clima:${clima} · ruta:${profile.ruta||'no especificada'}
+${altitud>1500?`ALTITUD: VO2max baja ~${Math.round((altitud-500)/300)*3}% vs nivel del mar. FC +5-8lpm para mismo esfuerzo.`:''}
+${calima?`CALOR: +250ml/hora. Rodar en ${horario==='mañana'?'la mañana temprano':horario}.`:''}
 
-══ ESTADO DE FORMA ACTUAL ══
-ATL (carga 7d): ${fit.atl} TSS/día | CTL (forma 42d): ${fit.ctl} TSS/día | TSB: ${fit.tsb} → ${tsbAdvice}
-Última rodada: hace ${fit.daysSinceLast} días | TSS sem. promedio: ${fit.avgWeekTSS} | TSS sem. máxima: ${fit.maxWeekTSS}
-Zonas 4 semanas: Z1:${fit.zAvg[0]}% Z2:${fit.zAvg[1]}% Z3:${fit.zAvg[2]}% Z4:${fit.zAvg[3]}% Z5:${fit.zAvg[4]}%
-${polAdj}
-Tendencia velocidad: ${fit.trend>2?`+${fit.trend}% mejorando`:fit.trend<-2?`${fit.trend}% bajando`:'estable'}
+FORMA: ATL=${fit.atl} CTL=${fit.ctl} TSB=${fit.tsb} → ${tsbAdv}
+Zonas 4sem: Z1:${fit.zAvg[0]}% Z2:${fit.zAvg[1]}% Z3:${fit.zAvg[2]}% Z4:${fit.zAvg[3]}% Z5:${fit.zAvg[4]}% · ${polAdv}
+Última rodada: hace ${fit.daysSinceLast}d · TSS prom/sem: ${fit.avgWeekTSS}
 
-══ HISTORIAL RECIENTE (más reciente primero) ══
-${hist||'Sin historial previo'}
+HISTORIAL:
+${hist||'sin datos'}
 
-══ CARGA SEMANAL (últimas 6 semanas) ══
-${wHistory||'Sin datos'}
+CARGA SEMANAL:
+${wHistory||'sin datos'}
 
-══ SUPLEMENTACIÓN REGISTRADA ══
-${suppStr}
+SUPLEMENTACIÓN: ${suppStr}
+CONTEXTO: ${context||'ninguno'}
 
-${compStr ? `══ COMPETENCIA ══\n${compStr}\n` : ''}
-══ CONTEXTO ADICIONAL ══
-${context||'Ninguno'}
+SEMANA: ${weekDays.join(' | ')}
+DÍAS DISPONIBLES: ${dias} → usar: ${daysStr}
 
-══ SEMANA A PLANIFICAR ══
-${weekDays.join(' | ')}
-Días de entreno disponibles: ${profile.dias||3}
+REGLAS:
+1. EXACTAMENTE ${dias} sesiones — una por día disponible: ${daysStr}
+2. Al menos ${Math.ceil(dias*0.6)} sesiones en Z1-Z2 (80/20 Seiler 2010)
+3. TSS total semana: máx ${Math.round((fit.avgWeekTSS||50)*1.10)} (Bompa 2018)
+4. Hidratación por sesión: <60min=${Math.round(peso*5+200)}-${Math.round(peso*5+400)}ml agua · 60-90min=${mlHour}ml/h+electrolitos · >90min=${mlHour2}ml/h+30-60g carbos/h
+5. Expresar "sorbo cada Xmin (cada Xkm)" según velocidad histórica ~${Math.round(fit.avgWeekTSS>0?(rides.slice(0,10).reduce((a,r)=>a+(r.speed||(r.dur>0?(r.dist||0)/(r.dur/60):0)),0)/Math.min(10,rides.length)):20)}km/h
+6. Cadencia 80-100rpm en sesiones Z2+ (Lucia 2001)
+7. Lenguaje SIMPLE: no usar jerga técnica, hablar de sensaciones
 
-══ REGLAS CIENTÍFICAS OBLIGATORIAS ══
-1. PROGRESIÓN: TSS de esta semana no supere ${Math.round((fit.avgWeekTSS||50)*1.10)} (máx +10% sobre promedio, Bompa 2018)
-2. POLARIZACIÓN 80/20: al menos ${Math.ceil((profile.dias||3)*0.6)} de las ${profile.dias||3} sesiones deben ser Z1-Z2 (Seiler 2010)
-3. RECUPERACIÓN: si TSB=${fit.tsb} < -15, una sesión debe ser recuperación activa Z1 (<45min)
-4. ALTITUD: ${altitud>1500?`a ${altitud}m, esperar FC ${Math.round((altitud-500)/300)*3-5}-${Math.round((altitud-500)/300)*3+5}lpm más alta que a nivel del mar para mismo esfuerzo`:'sin ajuste de altitud necesario'}
-5. CADENCIA: siempre mencionar rango 80-100rpm en sesiones Z2+ (Lucia et al. 2001)
-6. HIDRATACIÓN Y NUTRICIÓN: cada sesión DEBE incluir protocolo específico calculado así:
-   - <60min: solo agua, ${Math.round((profile.peso||70)*5+200)}-${Math.round((profile.peso||70)*5+400)}ml total, sin carbohidratos necesarios
-   - 60-90min: agua + electrolitos, ${Math.round((profile.peso||70)*7+200)}-${Math.round((profile.peso||70)*7+400)}ml/hora, 1 gel o plátano a los 45-50min
-   - >90min: ${Math.round((profile.peso||70)*8+200)}-${Math.round((profile.peso||70)*8+400)}ml/hora, 30-60g carbohidratos/hora cada 45min, electrolitos cada hora
-   - CLIMA: ${clima.includes('tropical')||clima.includes('caluroso')?'sumar +250ml/hora por calor y humedad':'hidratación estándar'}
-   - ALTITUD: ${altitud>2000?'sumar +15% agua por aire más seco y respiración acelerada':'sin ajuste'}
-   Expresar hidratación en ml Y en "cada cuántos km" basado en velocidad promedio histórica de ${Math.round(fit.avgWeekTSS>0?(rides.slice(0,10).reduce((a,r)=>a+(r.speed||(r.dur>0?(r.dist||0)/(r.dur/60):0)),0)/Math.min(10,rides.length)):20)}km/h del atleta.
-
-CRÍTICO: genera EXACTAMENTE ${profile.dias||3} sesiones en el array. Una por cada día disponible.
-Días a usar: ${weekDays.slice(0, profile.dias||3).join(' · ')}
-
-Responde SOLO con JSON (sin texto antes ni después, sin markdown):
-{"sesiones":[{"dia":"${weekDays[0]}","titulo":"...","tipo":"rodaje suave","descripcion":"CALENTAMIENTO: 10min suave. PRINCIPAL: descripción concreta. VUELTA CALMA: 5min.","duracion_min":60,"zona_principal":"Z2","lenguaje_simple":"Frase simple de 1 línea para cualquier ciclista","fc_objetivo":"${Math.round((profile.fcmax||185)*.65)}-${Math.round((profile.fcmax||185)*.75)} lpm","cadencia_objetivo":"85-95 rpm pedaleo suave","rpe_objetivo":5,"tss_estimado":40,"por_que_hoy":"Razón específica para este atleta","hidratacion_nutricion":{"llevar":"Xml agua...","protocolo":"Sorbo cada Xmin (cada Xkm a tu ritmo)","nota_clima":"${clima.includes('tropical')||clima.includes('caluroso')?'Rodar temprano. Añade sal al agua.':altitud>2000?'Bebe aunque no tengas sed.':''}"},"suplementacion":{"pre":"...","durante":"...","post":"..."},"razon_cientifica":"Autor año"},{"dia":"${weekDays[1] || weekDays[0]}","titulo":"...","tipo":"...","descripcion":"...","duracion_min":60,"zona_principal":"Z2","lenguaje_simple":"...","fc_objetivo":"...","cadencia_objetivo":"85-95 rpm","rpe_objetivo":5,"tss_estimado":40,"por_que_hoy":"...","hidratacion_nutricion":{"llevar":"...","protocolo":"...","nota_clima":""},"suplementacion":{"pre":"...","durante":"...","post":"..."},"razon_cientifica":"..."},{"dia":"${weekDays[2] || weekDays[1] || weekDays[0]}","titulo":"...","tipo":"...","descripcion":"...","duracion_min":60,"zona_principal":"Z3","lenguaje_simple":"...","fc_objetivo":"...","cadencia_objetivo":"85-95 rpm","rpe_objetivo":6,"tss_estimado":50,"por_que_hoy":"...","hidratacion_nutricion":{"llevar":"...","protocolo":"...","nota_clima":""},"suplementacion":{"pre":"...","durante":"...","post":"..."},"razon_cientifica":"..."}],"diagnostico_semana":"2-3 oraciones sobre el estado de forma en lenguaje simple.","consejo_semana":"Consejo concreto y específico para esta semana.","tss_semana_total":130,"referencias":"Foster 2001, Seiler 2010, Bompa 2018"}`
+Responde SOLO con JSON válido (sin texto antes ni después):
+${schemaHead}${s1},${s2},${s3}${schemaTail}`
 }
-
 
 export function buildCompetitionPlan(rides, supps, profile, competition) {
   const fit    = calcFitness(rides)
@@ -317,17 +238,38 @@ export function buildCompetitionPlan(rides, supps, profile, competition) {
   const weeksTo= Math.ceil(daysTo/7)
   const hist   = rides.slice(0,6).map(r => rideStr(r)).join('\n')
   const suppStr= supps.length ? supps.map(s=>`${s.n} ${s.d}`).join(', ') : 'ninguna'
+  const baseW  = Math.max(1, weeksTo-3)
+  const intW1  = Math.max(2, weeksTo-2)
+  const intW2  = Math.max(2, weeksTo-1)
+
+  const schema = JSON.stringify({
+    resumen_estrategia: "...",
+    fases: [
+      { fase:"Base", semanas:`1-${baseW}`, objetivo:"...", tss_objetivo_semana: fit.avgWeekTSS+15, sesiones_tipo:["..."], nota:"..." },
+      { fase:"Intensificación", semanas:`${intW1}-${intW2}`, objetivo:"...", tss_objetivo_semana: fit.avgWeekTSS+5, sesiones_tipo:["..."], nota:"..." },
+      { fase:"Tapering", semanas:`${weeksTo}`, objetivo:"Llegar fresco", tss_objetivo_semana: Math.round(fit.avgWeekTSS*0.5), sesiones_tipo:["..."], nota:"..." }
+    ],
+    proxima_semana: {
+      descripcion: "...",
+      sesiones: [{ dia:"...", titulo:"...", duracion_min:60, intensidad:"Z2", rpe_objetivo:5, descripcion:"..." }]
+    },
+    suplementacion_competencia: "...",
+    referencias: "Bompa 2018, Seiler 2010"
+  })
 
   return `Entrenador de ciclismo experto. Plan de periodización hacia competencia.
 
-ATLETA: ${profile.nivel} | FCmax:${profile.fcmax||185} | Peso:${profile.peso||70}kg | ${profile.dias||3}días/sem | ${profile.ruta||'calles'}
-FORMA: ATL=${fit.atl} CTL=${fit.ctl} TSB=${fit.tsb} | TSS prom/sem:${fit.avgWeekTSS}
-COMPETENCIA: "${competition.name}" · ${daysTo} días · ${weeksTo} semanas · ${competition.distance||'?'}km · ${competition.type||'gran fondo'} · meta: ${competition.goal||'terminar'}
+ATLETA: ${profile.nivel} · FCmax:${profile.fcmax||185} · Peso:${profile.peso||70}kg · ${profile.dias||3}días/sem
+FORMA: ATL=${fit.atl} CTL=${fit.ctl} TSB=${fit.tsb} · TSS prom/sem:${fit.avgWeekTSS}
+COMPETENCIA: "${competition.name}" · en ${daysTo} días (${weeksTo} semanas) · ${competition.distance||'?'}km · ${competition.type||'gran fondo'} · meta: ${competition.goal||'terminar'}
 SUPLEMENTACIÓN: ${suppStr}
-HISTORIAL: ${hist||'sin datos'}
+HISTORIAL:
+${hist||'sin datos'}
 
-Responde SOLO con este JSON:
-{"resumen_estrategia":"...","fases":[{"fase":"Base","semanas":"1-${Math.max(1,weeksTo-3)}","objetivo":"...","tss_objetivo_semana":${fit.avgWeekTSS+15},"sesiones_tipo":["..."],"nota":"..."},{"fase":"Intensificación","semanas":"${Math.max(2,weeksTo-2)}-${Math.max(2,weeksTo-1)}","objetivo":"...","tss_objetivo_semana":${fit.avgWeekTSS+5},"sesiones_tipo":["..."],"nota":"..."},{"fase":"Tapering","semanas":"${weeksTo}","objetivo":"Llegar fresco","tss_objetivo_semana":${Math.round(fit.avgWeekTSS*0.5)},"sesiones_tipo":["..."],"nota":"..."}],"proxima_semana":{"descripcion":"...","sesiones":[{"dia":"...","titulo":"...","duracion_min":60,"intensidad":"Z2","rpe_objetivo":5,"descripcion":"..."}]},"suplementacion_competencia":"protocolo día de carrera con stack actual","referencias":"Bompa 2018, Seiler 2010"}`
+Fases: Base (sem 1-${baseW}) → Intensificación (sem ${intW1}-${intW2}) → Tapering (sem ${weeksTo})
+
+Responde SOLO con este JSON (completa todos los "..." con contenido real):
+${schema}`
 }
 
 export function buildTrendPrompt(rides) {
@@ -351,5 +293,5 @@ export function buildSuppPrompt(supps, profile, rides=[]) {
 PERFIL: ${profile.nivel} peso:${profile.peso||70}kg objetivo:"${profile.objetivo}" ${fitCtx}
 STACK:\n${stack}
 Responde SOLO con JSON:
-{"analisis_general":"...","por_suplemento":[{"nombre":"...","evidencia":"sólida|moderada|débil","timing_optimo":"...","con_este_perfil":"...","ajuste_sugerido":"..."}],"protocolo_semana":{"dia_intenso":["..."],"dia_z2":["..."],"dia_descanso":["..."]},"referencias":"..."}`
+{"analisis_general":"...","por_suplemento":[{"nombre":"...","evidencia":"solida|moderada|debil","timing_optimo":"...","con_este_perfil":"...","ajuste_sugerido":"..."}],"protocolo_semana":{"dia_intenso":["..."],"dia_z2":["..."],"dia_descanso":["..."]},"referencias":"..."}`
 }
