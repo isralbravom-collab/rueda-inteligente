@@ -21,20 +21,22 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard rides={store.rides} profile={store.profile}/>}/>
           <Route path="/registrar" element={
-            <Registrar
-              rides={store.rides}
-              supps={store.supps}
-              profile={store.profile}
-              addRide={store.addRide}
-              isDuplicate={store.isDuplicate}
-            />
+            <Registrar rides={store.rides} supps={store.supps} profile={store.profile}
+              addRide={store.addRide} isDuplicate={store.isDuplicate}/>
           }/>
-          <Route path="/plan" element={<Plan rides={store.rides} supps={store.supps} profile={store.profile}/>}/>
+          <Route path="/plan" element={
+            <Plan rides={store.rides} supps={store.supps} profile={store.profile}
+              activePlan={store.activePlan} savePlan={store.savePlan}
+              clearPlan={store.clearPlan} completeSesion={store.completeSesion}/>
+          }/>
           <Route path="/historial" element={<Historial rides={store.rides} deleteRide={store.deleteRide} profile={store.profile}/>}/>
           <Route path="/graficas" element={<Graficas rides={store.rides}/>}/>
           <Route path="/suplementos" element={<Suplementos supps={store.supps} addSupp={store.addSupp} deleteSupp={store.deleteSupp} profile={store.profile} rides={store.rides}/>}/>
           <Route path="/perfil" element={<Perfil profile={store.profile} saveProfile={store.saveProfile}/>}/>
-          <Route path="/strava" element={<Strava rides={store.rides} addRide={store.addRide} isDuplicate={store.isDuplicate} profile={store.profile}/>}/>
+          <Route path="/strava" element={
+            <Strava rides={store.rides} addRide={store.addRide} isDuplicate={store.isDuplicate}
+              profile={store.profile} clearAllRides={store.clearAllRides}/>
+          }/>
         </Routes>
       </main>
     </div>
