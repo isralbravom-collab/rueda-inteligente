@@ -330,6 +330,105 @@ export function buildCompetitionPlanDetailed(rides, supps, profile, competition)
     return `[hace ${d}d] ${Math.round(r.dur)}min ${(r.dist||0).toFixed(1)}km RPE:${r.rpe} TSS:${tssOf(r)}`
   }).join('\n')
 
+  const fcZ2  = `${Math.round(fcmax*.65)}-${Math.round(fcmax*.75)}`
+  const fcZ3  = `${Math.round(fcmax*.75)}-${Math.round(fcmax*.83)}`
+  const fcZ4  = `${Math.round(fcmax*.83)}-${Math.round(fcmax*.90)}`
+  const nota  = calima ? 'Rodar temprano. Añade sal al agua.' : ''
+  const mlH   = Math.round(peso*7+300)
+  const mlHL  = Math.round(peso*8+400)
+  const baseW = Math.max(1, weeksTo-3)
+
+  // Días de la semana según disponibilidad
+  const allDays = ['lunes','martes','miércoles','jueves','viernes','sábado','domingo']
+  const trainingDays = allDays.slice(0, dias)
+
+  // Generar sesiones de ejemplo con los días reales
+  const sesionesEjemplo = trainingDays.map((dia, i) => {
+    const isIntense = i === Math.floor(dias/2)
+    return JSON.stringify({
+      dia,
+      titulo: isIntense ? "Intervalo o tempo" : i === dias-1 ? "Salida larga" : "Rodaje base",
+      tipo: isIntense ? "intervalos" : i === dias-1 ? "salida larga" : "rodaje suave",
+      descripcion: `CALENTAMIENTO: 10min suave. PRINCIPAL: ${isIntense ? "5×5min en zona 4 con 3min descanso" : "45min a ritmo cómodo constante"}. VUELTA CALMA: 10min.`,
+      duracion_min: isIntense ? 70 : i === dias-1 ? 90 : 60,
+      zona: isIntense ? "Z4" : i === dias-1 ? "Z2" : "Z2",
+      lenguaje_simple: isIntense ? "Esfuerzo alto pero controlado, no al máximo" : "Ritmo cómodo, puedes hablar",
+      fc_objetivo: isIntense ? `${fcZ4} lpm` : `${fcZ2} lpm`,
+      rpe_objetivo: isIntense ? 7 : 5,
+      hidratacion: i === dias-1 ? `${mlHL}ml/hora + gel a los 45min` : `${mlH}ml agua. Sorbo cada 15min.`,
+      nota_clima: nota
+    })
+  }).join(',')
+
+  const tssBase  = Math.round(fit.avgWeekTSS * 1.0)
+  const tssInt   = Math.round(fit.avgWeekTSS * 1.1)
+  const tssTaper = Math.round(fit.avgWeekTSS * 0.55)
+
+  return `Eres coach de ciclismo experto. Genera plan de periodización COMPLETO semana por semana.
+
+ATLETA: ${profile.nombre||'atleta'} · ${profile.nivel} · ${peso}kg · FCmax:${fcmax}lpm · ${dias}días/sem
+FORMA: ATL=${fit.atl} CTL=${fit.ctl} TSB=${fit.tsb} · TSS prom/sem:${fit.avgWeekTSS}
+COMPETENCIA: "${competition.name}" · ${daysTo} días · ${weeksTo} semanas · ${competition.distance||'?'}km · meta: "${competition.goal||'terminar'}"
+${calima ? 'CLIMA: tropical — rodar temprano, +250ml/hora extra' : ''}
+HISTORIAL:
+${hist||'sin datos'}
+
+FASES:
+- Semanas 1-${baseW}: BASE (${dias} sesiones Z2 dominante, volumen creciente, TSS ~${tssBase}/sem)
+- Semanas ${baseW+1}-${weeksTo-1}: INTENSIFICACIÓN (${dias} sesiones, intervalos, TSS ~${tssInt}/sem)
+- Semana ${weeksTo}: TAPERING (${dias} sesiones suaves, TSS ~${tssTaper}/sem, llegar fresco)
+
+DÍAS DE ENTRENAMIENTO: ${trainingDays.join(', ')}
+CADA SEMANA DEBE TENER EXACTAMENTE ${dias} SESIONES — una para cada día: ${trainingDays.join(', ')}
+
+ZONAS FC: Z2=${fcZ2}lpm · Z3=${fcZ3}lpm · Z4=${fcZ4}lpm
+HIDRATACIÓN: <60min=${Math.round(peso*5+200)}ml · 60-90min=${mlH}ml/h · >90min=${mlHL}ml/h+gel cada 45min
+
+Responde SOLO con JSON válido (sin texto antes ni después):
+{"competencia":"${competition.name}","fecha_competencia":"${competition.date}","distancia_km":${competition.distance||135},"meta":"${competition.goal||'terminar'}","resumen":"2 oraciones sobre la estrategia en lenguaje simple","consejo_general":"consejo específico para este atleta","semanas":[{"numero":1,"fase":"Base","objetivo":"objetivo de esta semana en lenguaje simple","tss_objetivo":${tssBase},"sesiones":[${sesionesEjemplo}],"nota_semana":"qué enfatizar esta semana"}],"protocolo_competencia":{"dia_antes":"qué comer y descansar el día previo","manana_carrera":"desayuno 2-3h antes de la carrera","durante":"cada cuánto comer y beber en ${competition.distance||135}km","post":"recuperación al terminar"},"referencias":"Bompa 2018, Seiler 2010"}
+
+IMPORTANTE: el ejemplo muestra 1 semana pero debes generar las ${weeksTo} semanas completas, cada una con ${dias} sesiones (${trainingDays.join(', ')}). No omitas ninguna semana ni sesión.`
+}
+
+
+export function buildTrendPrompt(rides) {
+  const fit  = calcFitness(rides)
+  const last = rides.slice(0,20).reverse()
+  return `Analiza historial ciclismo en 90 palabras. ¿Progreso, estancamiento o sobreentrenamiento? Basa en Seiler y Coggan.
+ATL=${fit.atl} CTL=${fit.ctl} TSB=${fit.tsb} tendencia:${fit.trend>0?'+':''}${fit.trend}%
+Velocidades: ${last.map(r=>r.speed||(r.dur>0?((r.dist||0)/(r.dur/60)).toFixed(1):'0')).join(',')}km/h
+FC: ${last.map(r=>Math.round(r.hrAvg||0)).join(',')}lpm
+RPE: ${last.map(r=>r.rpe||0).join(',')}
+Cadencia: ${last.map(r=>Math.round(r.cad||0)).join(',')}rpm
+Watts: ${last.map(r=>r.watts||0).join(',')}W
+Z4+Z5%: ${last.map(r=>((r.zp||[])[3]||0)+((r.zp||[])[4]||0)).join(',')}`
+}
+
+export function buildSuppPrompt(supps, profile, rides=[]) {
+  const fit    = rides.length ? calcFitness(rides) : null
+  const fitCtx = fit ? `ATL=${fit.atl} TSB=${fit.tsb} Z4+Z5=${fit.zAvg[3]+fit.zAvg[4]}%` : ''
+  const stack  = supps.map(s=>`- ${s.n} ${s.d}(${s.t}): ${s.o}`).join('\n')
+  return `Nutricionista deportivo ciclismo. Analiza stack personalizado.
+PERFIL: ${profile.nivel} peso:${profile.peso||70}kg objetivo:"${profile.objetivo}" ${fitCtx}
+STACK:\n${stack}
+Responde SOLO con JSON:
+{"analisis_general":"...","por_suplemento":[{"nombre":"...","evidencia":"solida|moderada|debil","timing_optimo":"...","con_este_perfil":"...","ajuste_sugerido":"..."}],"protocolo_semana":{"dia_intenso":["..."],"dia_z2":["..."],"dia_descanso":["..."]},"referencias":"..."}`
+}
+
+export function buildCompetitionPlanDetailed(rides, supps, profile, competition) {
+  const fit    = calcFitness(rides)
+  const now    = new Date()
+  const daysTo = Math.round((new Date(competition.date)-now)/86400000)
+  const weeksTo= Math.ceil(daysTo/7)
+  const dias   = profile.dias || 3
+  const fcmax  = profile.fcmax || 185
+  const peso   = profile.peso || 70
+  const calima = (profile.clima||'').includes('tropical')||(profile.clima||'').includes('caluroso')
+  const hist   = rides.slice(0,5).map(r => {
+    const d = Math.round((Date.now()-new Date(r.iso).getTime())/86400000)
+    return `[hace ${d}d] ${Math.round(r.dur)}min ${(r.dist||0).toFixed(1)}km RPE:${r.rpe} TSS:${tssOf(r)}`
+  }).join('\n')
+
   const fcZ2   = `${Math.round(fcmax*.65)}-${Math.round(fcmax*.75)}`
   const fcZ3   = `${Math.round(fcmax*.75)}-${Math.round(fcmax*.83)}`
   const nota   = calima ? 'Rodar temprano. Añade sal al agua.' : ''
